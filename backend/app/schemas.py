@@ -384,6 +384,7 @@ class AssetReportSection(BaseModel):
 
 class AssetReportResponse(BaseModel):
     report_id: str
+    report_title: str = "Infrastructure Intelligence & Condition Assessment Audit"
     generated_at: str
     generated_by: str
     asset_id: str
@@ -394,9 +395,71 @@ class AssetReportResponse(BaseModel):
     ownership_authority: str
     overall_risk_score: float
     risk_level: str
+    risk_category: str = ""
     health_index: float
+    executive_summary: str = ""
     sections: List[AssetReportSection]
+    verified_data_points: List[str] = []
+    unverified_claims: List[str] = []
+    evidence_gaps: List[str] = []
     critical_findings_count: int
     open_actions_count: int
     verified_interventions_count: int
     disclaimer: str = "AAYAM Prototype Intelligence Report. All metrics grounded in available records."
+
+
+class ReportSummaryItem(BaseModel):
+    report_id: str
+    asset_id: str
+    asset_name: str
+    category: str
+    report_title: str
+    report_type: str
+    report_date: str
+    risk_level: str
+    risk_score: float
+    status: str
+    source_document: Optional[str] = None
+    findings_count: int
+    inspections_count: int
+    last_updated: str
+
+
+class ReportsOverviewMetrics(BaseModel):
+    total_assets: int
+    total_inspections: int
+    pending_inspections: int
+    completed_inspections: int
+    verified_inspections: int
+    open_findings: int
+    resolved_findings: int
+    critical_risk_assets: int
+    available_evidence_documents: int
+    reports_available: int
+
+
+class ReportLibraryResponse(BaseModel):
+    summary: ReportsOverviewMetrics
+    reports: List[ReportSummaryItem]
+
+
+class HistoryEventItem(BaseModel):
+    event_id: str
+    event_date: str
+    event_type: str
+    asset_id: str
+    asset_name: str
+    category: str
+    title: str
+    description: str
+    severity: str
+    status: Optional[str] = None
+    source_record: Optional[str] = None
+
+
+class HistoryTimelineResponse(BaseModel):
+    total_events: int
+    events: List[HistoryEventItem]
+    historical_snapshots_available: bool = False
+    notice: str = "Historical records reflect documented database entries (commissioning, inspections, findings, and verifications). Time-series risk score snapshots prior to the current session are not stored."
+
