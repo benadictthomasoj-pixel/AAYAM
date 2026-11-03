@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
 from pydantic import BaseModel
+from app.config import EVIDENCE_DIR
 
 logger = logging.getLogger("aayam.documents")
 
@@ -38,7 +39,7 @@ class DocumentStore:
     """
 
     def __init__(self, evidence_dir: Optional[Path] = None):
-        self.evidence_dir = evidence_dir or (Path(__file__).resolve().parent.parent / "data" / "evidence")
+        self.evidence_dir = evidence_dir or EVIDENCE_DIR
         self.chunks: List[DocumentEvidenceChunk] = []
         self._load_documents()
 

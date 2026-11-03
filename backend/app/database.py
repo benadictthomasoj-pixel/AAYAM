@@ -1,12 +1,14 @@
-from sqlalchemy import create_engine, event
+import os
+import sqlite3
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import DATABASE_URL
 
-import sqlite3
+is_sqlite = DATABASE_URL.startswith("sqlite")
 
 # For SQLite, check_same_thread=False is needed for multi-threaded FastAPI handlers
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+connect_args = {"check_same_thread": False} if is_sqlite else {}
 
 
 @event.listens_for(Engine, "connect")
@@ -21,10 +23,19 @@ def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
         cursor.close()
 
 
+engine_kwargs = {"connect_args": connect_args, "echo": False}
+if not is_sqlite:
+    # Production PostgreSQL connection pool configuration
+    engine_kwargs.update({
+        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+        "pool_pre_ping": True,
+        "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+    })
+
 engine = create_engine(
     DATABASE_URL,
-    connect_args=connect_args,
-    echo=False
+    **engine_kwargs
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -34,28 +45,30 @@ Base = declarative_base()
 
 def ensure_schema_compatibility(target_engine=None):
     """
-    Ensures existing SQLite databases have all required tables and columns without resetting data.
-    Safely creates the 'users' table if missing, and preserves existing assets, inspections, and evidence.
+    Ensures existing databases (both SQLite and PostgreSQL) have all required tables
+    and columns without resetting data. Dialect-agnostic using SQLAlchemy inspector.
     """
-    from sqlalchemy import text
     eng = target_engine or engine
     try:
-        # Non-destructively creates any newly defined tables (users, asset_media, evidence_sources, asset_findings)
+        # Non-destructively creates any newly defined tables
         Base.metadata.create_all(bind=eng)
+        insp = inspect(eng)
+        tables = insp.get_table_names()
+
         with eng.connect() as conn:
-            tables = [r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
             if "assets" in tables:
-                asset_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(assets)")).fetchall()]
+                asset_cols = [c["name"] for c in insp.get_columns("assets")]
                 if "ownership_authority" not in asset_cols:
                     conn.execute(text("ALTER TABLE assets ADD COLUMN ownership_authority VARCHAR(200) DEFAULT 'State Public Works Department (PWD)'"))
                     conn.commit()
             if "inspections" in tables:
-                cols = [r[1] for r in conn.execute(text("PRAGMA table_info(inspections)")).fetchall()]
+                cols = [c["name"] for c in insp.get_columns("inspections")]
                 if "verification_outcome" not in cols:
                     conn.execute(text("ALTER TABLE inspections ADD COLUMN verification_outcome VARCHAR(50)"))
                     conn.commit()
             if "asset_findings" in tables:
-                finding_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(asset_findings)")).fetchall()]
+                finding_cols = [c["name"] for c in insp.get_columns("asset_findings")]
+                bool_default = "BOOLEAN DEFAULT FALSE" if eng.dialect.name == "postgresql" else "BOOLEAN DEFAULT 0"
                 col_defs = [
                     ("intelligence_category", "VARCHAR(50) DEFAULT 'Structural'"),
                     ("evidence_classification", "VARCHAR(50) DEFAULT 'Documented'"),
@@ -66,7 +79,7 @@ def ensure_schema_compatibility(target_engine=None):
                     ("reviewed_by", "VARCHAR(100)"),
                     ("reviewed_at", "VARCHAR(50)"),
                     ("review_decision_notes", "TEXT"),
-                    ("ai_generated", "BOOLEAN DEFAULT 0"),
+                    ("ai_generated", bool_default),
                     ("run_id", "VARCHAR(64)"),
                     ("exact_location", "VARCHAR(200)"),
                     ("severity_level", "INTEGER DEFAULT 3"),
@@ -84,12 +97,12 @@ def ensure_schema_compatibility(target_engine=None):
                         conn.execute(text(f"ALTER TABLE asset_findings ADD COLUMN {col_name} {col_type}"))
                 conn.commit()
             if "ai_intelligence_runs" in tables:
-                run_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(ai_intelligence_runs)")).fetchall()]
+                run_cols = [c["name"] for c in insp.get_columns("ai_intelligence_runs")]
                 if "predictive_data_warning" not in run_cols:
                     conn.execute(text("ALTER TABLE ai_intelligence_runs ADD COLUMN predictive_data_warning TEXT"))
                     conn.commit()
     except Exception as e:
-        # Pass gracefully if not SQLite or during unit test setup
+        # Pass gracefully during test fixture teardown or in-memory setups
         pass
 
 

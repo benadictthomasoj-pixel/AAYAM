@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 
-from app.config import APP_NAME, ENV, CORS_ORIGINS
+from app.config import APP_NAME, ENV, CORS_ORIGINS, CORS_ORIGIN_REGEX, MEDIA_DIR, EVIDENCE_DIR
 from app.database import get_db, Base, engine
 from app.models import (
     Asset,
@@ -68,7 +68,6 @@ from app.heartbeat_engine import calculate_digital_heartbeat, determine_asset_st
 from app.database import ensure_schema_compatibility, engine
 from app.seed import init_db
 
-MEDIA_DIR = Path(__file__).resolve().parent.parent / "data" / "media"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO)
@@ -104,10 +103,17 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS if CORS_ORIGINS else ["*"],
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health", tags=["Health"], include_in_schema=False)
+def get_health_alias(db: Session = Depends(get_db)):
+    """Health check endpoint alias for cloud platform automated runners (Render, AWS, GCP)."""
+    return get_health(db=db)
 
 
 @app.get("/", tags=["Root"])

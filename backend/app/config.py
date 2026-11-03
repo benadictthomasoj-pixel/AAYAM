@@ -26,13 +26,22 @@ HOST = os.getenv("HOST", "0.0.0.0")
 # Comma-separated CORS origins
 _cors_raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 CORS_ORIGINS = [origin.strip() for origin in _cors_raw.split(",") if origin.strip()]
+CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX", r"^https://.*\.vercel\.app$")
 
-# Default SQLite database path
+# Database URL configuration (Supports SQLite & PostgreSQL)
 _raw_db = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/aayam_infra.db")
 if _raw_db.startswith("sqlite:///."):
     DATABASE_URL = f"sqlite:///{BASE_DIR}/{_raw_db[12:]}" if _raw_db.startswith("sqlite:///./") else f"sqlite:///{BASE_DIR}/{_raw_db[11:]}"
+elif _raw_db.startswith("postgres://"):
+    # Render and Heroku default to postgres://; SQLAlchemy 2.0 requires postgresql://
+    DATABASE_URL = _raw_db.replace("postgres://", "postgresql://", 1)
 else:
     DATABASE_URL = _raw_db
+
+# Storage Directories (Configurable for Render Persistent Disks)
+DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
+MEDIA_DIR = Path(os.getenv("MEDIA_DIR", DATA_DIR / "media"))
+EVIDENCE_DIR = Path(os.getenv("EVIDENCE_DIR", DATA_DIR / "evidence"))
 
 # ==============================================================================
 # JWT AUTHENTICATION CONFIGURATION & SECURITY VALIDATION
