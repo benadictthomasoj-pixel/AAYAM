@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
   Building2,
@@ -25,19 +25,64 @@ import {
   RefreshCw,
   Printer,
   Compass,
+  Sparkles,
+  Brain,
+  Cpu,
+  Check,
+  Filter,
+  Send,
+  MessageSquare,
+  Bot,
+  CornerDownRight,
+  FileWarning,
+  Eye,
+  ArrowUpRight,
+  Scale,
+  Gauge,
+  HelpCircle,
+  UserCheck,
+  Wrench,
+  Shield,
+  Zap,
+  TrendingDown,
+  Info,
+  DollarSign,
+  ChevronDown,
+  AlertCircle,
+  BookOpen,
+  Bookmark,
+  Share2,
 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import { useLanguage } from '../context/LanguageContext';
 import {
   fetchAssetIntelligence,
+  fetchLatestAssetIntelligence,
+  runAssetIntelligence,
+  reviewAssetFinding,
+  analyzeInspectionDocument,
+  analyzeInfrastructureImage,
+  askCopilot,
   uploadAssetMedia,
   createAssetFinding,
 } from '../services/api';
 import {
   getDemoAssetIntelligence,
+  runDemoAssetIntelligence,
+  reviewDemoAssetFinding,
   uploadDemoAssetMedia,
   createDemoAssetFinding,
+  askDemoCopilot,
 } from '../demo/demoService';
+import { getAssetHeroImage, getAssetThumbnail } from '../utils/assetImages';
+import {
+  enrichFinding,
+  buildComponentInventory,
+  build3StageInterventionPlan,
+  buildPrioritizedRiskTable,
+  computeWholeAssetSummary,
+  SEVERITY_LEVELS,
+} from '../utils/componentIntelligence';
 
 export default function AssetIntelligenceProfile({
   assetId,
@@ -51,52 +96,71 @@ export default function AssetIntelligenceProfile({
   isAdmin = false,
 }) {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'timeline' | 'media' | 'heartbeat' | 'findings' | 'sources'
+
+  // Active section jump navigation
+  const [activeSection, setActiveSection] = useState('overview');
+
+  // Core Data State
   const [intel, setIntel] = useState(null);
+  const [latestAiRun, setLatestAiRun] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [runningAi, setRunningAi] = useState(false);
   const [error, setError] = useState(null);
+  const [aiSuccessMessage, setAiSuccessMessage] = useState(null);
+
+  // Intervention Plan active stage filter: 'all' | 'stage_a' | 'stage_b' | 'stage_c'
+  const [interventionStageTab, setInterventionStageTab] = useState('stage_a');
+
+  // 5 Modules active tab: 'structural' | 'environmental' | 'compliance' | 'operational' | 'predictive'
+  const [activeModuleTab, setActiveModuleTab] = useState('structural');
+
+  // Severity filter for components: 'all' | 1 | 2 | 3 | 4 | 5 | 0
+  const [severityFilter, setSeverityFilter] = useState('all');
+
+  // Finding Verification Modal State
+  const [reviewingFinding, setReviewingFinding] = useState(null);
+  const [reviewDecision, setReviewDecision] = useState('Verified');
+  const [reviewerName, setReviewerName] = useState('Lead Infrastructure Engineer (AAYAM)');
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState(null);
 
   // Expanded Image Viewer Modal
   const [selectedImage, setSelectedImage] = useState(null);
 
-  // Upload Media Dialog
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadCategory, setUploadCategory] = useState('Visible Damage');
-  const [uploadCaption, setUploadCaption] = useState('');
-  const [uploadUploader, setUploadUploader] = useState('Field Inspection Engineer');
-  const [uploadFile, setUploadFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
+  // Embedded Copilot Quick-Chat State
+  const [copilotMessages, setCopilotMessages] = useState([]);
+  const [copilotInput, setCopilotInput] = useState('');
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const chatBottomRef = useRef(null);
 
-  // Add Finding Dialog
-  const [showAddFindingModal, setShowAddFindingModal] = useState(false);
-  const [findingTitle, setFindingTitle] = useState('');
-  const [findingPlain, setFindingPlain] = useState('');
-  const [findingTechnical, setFindingTechnical] = useState('');
-  const [findingSeverity, setFindingSeverity] = useState('Medium');
-  const [findingComponent, setFindingComponent] = useState('');
-  const [findingEvidence, setFindingEvidence] = useState('');
-  const [findingRecommendation, setFindingRecommendation] = useState('');
-  const [submittingFinding, setSubmittingFinding] = useState(false);
-  const [findingError, setFindingError] = useState(null);
+  // Document upload analysis state
+  const [uploadingDoc, setUploadingDoc] = useState(false);
 
-  // Media category filter
-  const [mediaFilter, setMediaFilter] = useState('All');
-
-  const loadIntelligence = async () => {
+  const loadData = async () => {
     if (!assetId) return;
     setLoading(true);
     setError(null);
     try {
-      if (isDemo) {
+      if (isDemo || assetId.startsWith('DEMO-')) {
         const data = await getDemoAssetIntelligence(assetId);
         setIntel(data);
       } else {
-        const data = await fetchAssetIntelligence(assetId);
-        setIntel(data);
+        const [baseData, latestRun] = await Promise.allSettled([
+          fetchAssetIntelligence(assetId),
+          fetchLatestAssetIntelligence(assetId),
+        ]);
+        if (baseData.status === 'fulfilled') {
+          setIntel(baseData.value);
+        } else {
+          throw baseData.reason;
+        }
+        if (latestRun.status === 'fulfilled' && latestRun.value) {
+          setLatestAiRun(latestRun.value);
+        }
       }
     } catch (err) {
-      console.error('Failed to load asset intelligence:', err);
+      console.error('Failed to load asset intelligence profile:', err);
       setError(err.message || 'Unable to load asset intelligence profile.');
     } finally {
       setLoading(false);
@@ -104,1118 +168,1389 @@ export default function AssetIntelligenceProfile({
   };
 
   useEffect(() => {
-    loadIntelligence();
+    loadData();
   }, [assetId, isDemo]);
+
+  // Derived intelligence structures (uses backend calculation with fallback client enrichment)
+  const currentAsset = intel?.asset || initialAsset || {};
+  const assetCategory = currentAsset.category || 'Bridge';
+
+  const enrichedFindings = useMemo(() => {
+    const raw = intel?.findings || [];
+    return raw.map((f) => enrichFinding(f, assetCategory));
+  }, [intel?.findings, assetCategory]);
+
+  const criticalAreas = useMemo(() => {
+    if (intel?.critical_areas && intel.critical_areas.length > 0) {
+      return intel.critical_areas.map((f) => enrichFinding(f, assetCategory));
+    }
+    const filtered = enrichedFindings.filter((f) => f.severity_level === 1 || f.severity_level === 2);
+    return filtered.length > 0 ? filtered : enrichedFindings.slice(0, 2);
+  }, [intel?.critical_areas, enrichedFindings, assetCategory]);
+
+  const componentInventory = useMemo(() => {
+    if (intel?.component_inventory && intel.component_inventory.length > 0) {
+      return intel.component_inventory;
+    }
+    return buildComponentInventory(currentAsset, enrichedFindings, intel?.inspections || [], intel?.media || []);
+  }, [intel?.component_inventory, currentAsset, enrichedFindings, intel?.inspections, intel?.media]);
+
+  const interventionPlan = useMemo(() => {
+    if (intel?.intervention_plan && intel.intervention_plan.stage_a) {
+      return intel.intervention_plan;
+    }
+    return build3StageInterventionPlan(currentAsset, enrichedFindings, intel?.inspections || []);
+  }, [intel?.intervention_plan, currentAsset, enrichedFindings, intel?.inspections]);
+
+  const prioritizedRisks = useMemo(() => {
+    if (intel?.prioritized_risks && intel.prioritized_risks.length > 0) {
+      return intel.prioritized_risks;
+    }
+    return buildPrioritizedRiskTable(enrichedFindings);
+  }, [intel?.prioritized_risks, enrichedFindings]);
+
+  const conditionSummary = useMemo(() => {
+    if (intel?.condition_summary && intel.condition_summary.overall_status) {
+      return intel.condition_summary;
+    }
+    return computeWholeAssetSummary(
+      currentAsset,
+      intel?.heartbeat,
+      enrichedFindings,
+      componentInventory,
+      intel?.inspections || []
+    );
+  }, [intel?.condition_summary, currentAsset, intel?.heartbeat, enrichedFindings, componentInventory, intel?.inspections]);
+
+  // Filtered component inventory
+  const filteredComponents = useMemo(() => {
+    if (severityFilter === 'all') return componentInventory;
+    return componentInventory.filter((c) => c.status_level === Number(severityFilter));
+  }, [componentInventory, severityFilter]);
+
+  // Handle Run AI Intelligence
+  const handleExecuteAIAnalysis = async () => {
+    if (runningAi) return;
+    setRunningAi(true);
+    setAiSuccessMessage(null);
+    setError(null);
+    try {
+      if (isDemo || assetId.startsWith('DEMO-')) {
+        await new Promise((r) => setTimeout(r, 600));
+        await loadData();
+        setAiSuccessMessage('Simulated Cloud Intelligence executed successfully.');
+      } else {
+        const runResult = await runAssetIntelligence(assetId);
+        setLatestAiRun(runResult);
+        await loadData();
+        setAiSuccessMessage('Central Cloud Intelligence analysis executed and synchronized.');
+      }
+    } catch (err) {
+      console.error('AI Analysis failed:', err);
+      setError(err.message || 'Failed to execute Cloud AI analysis run.');
+    } finally {
+      setRunningAi(false);
+    }
+  };
+
+  // Submit Engineer Review
+  const handleSubmitReview = async () => {
+    if (!reviewingFinding) return;
+    setSubmittingReview(true);
+    setReviewError(null);
+    try {
+      const reviewPayload = {
+        verification_status: reviewDecision,
+        review_decision_notes: reviewNotes || `Decision marked as ${reviewDecision} by authorized engineering officer.`,
+        reviewed_by: reviewerName,
+      };
+
+      if (isDemo || assetId.startsWith('DEMO-')) {
+        await reviewDemoAssetFinding(reviewingFinding.id, reviewPayload);
+      } else {
+        await reviewAssetFinding(reviewingFinding.id, reviewPayload);
+      }
+
+      await loadData();
+      setReviewingFinding(null);
+      setReviewNotes('');
+    } catch (err) {
+      console.error('Review submission failed:', err);
+      setReviewError(err.message || 'Failed to record engineering review decision.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  // Copilot Ask
+  const handleAskCopilot = async (promptOverride) => {
+    const q = (promptOverride || copilotInput).trim();
+    if (!q || copilotLoading) return;
+
+    const userMsg = {
+      sender: 'user',
+      text: q,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setCopilotMessages((prev) => [...prev, userMsg]);
+    setCopilotInput('');
+    setCopilotLoading(true);
+
+    try {
+      const res = isDemo || assetId.startsWith('DEMO-')
+        ? await askDemoCopilot(q, { asset_id: assetId })
+        : await askCopilot(q, { asset_id: assetId });
+
+      const assistantMsg = {
+        sender: 'assistant',
+        text: res.answer,
+        citations: res.citations || [],
+        facts: res.observed_facts || [],
+        recommendations: res.recommendations || [],
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setCopilotMessages((prev) => [...prev, assistantMsg]);
+    } catch (err) {
+      setCopilotMessages((prev) => [
+        ...prev,
+        {
+          sender: 'assistant',
+          text: `Error retrieving grounded synthesis: ${err.message || 'Please check backend connection.'}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+    } finally {
+      setCopilotLoading(false);
+    }
+  };
 
   if (!isOpen) return null;
 
-  const asset = intel?.asset || initialAsset;
-  const heartbeat = intel?.heartbeat;
-  const findings = intel?.findings || [];
-  const sources = intel?.sources || [];
-  const media = intel?.media || [];
-  const timeline = intel?.timeline || [];
-  const completeness = intel?.completeness || { percentage: 0, verified_fields: [], missing_fields: [] };
-
-  const filteredMedia = mediaFilter === 'All'
-    ? media
-    : media.filter((m) => m.category.toLowerCase() === mediaFilter.toLowerCase());
-
-  const handleUploadSubmit = async (e) => {
-    e.preventDefault();
-    if (!uploadFile) {
-      setUploadError('Please select an image file to upload.');
-      return;
-    }
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      formData.append('category', uploadCategory);
-      formData.append('caption', uploadCaption);
-      formData.append('source_uploader', uploadUploader);
-
-      if (isDemo) {
-        await uploadDemoAssetMedia();
-      } else {
-        await uploadAssetMedia(assetId, formData);
-      }
-      setShowUploadModal(false);
-      setUploadFile(null);
-      setUploadCaption('');
-      await loadIntelligence();
-    } catch (err) {
-      setUploadError(err.message || 'Failed to upload media file.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleAddFindingSubmit = async (e) => {
-    e.preventDefault();
-    if (!findingTitle.trim() || !findingPlain.trim()) {
-      setFindingError('Title and plain-language explanation are required.');
-      return;
-    }
-    setSubmittingFinding(true);
-    setFindingError(null);
-    try {
-      const payload = {
-        title: findingTitle.trim(),
-        plain_explanation: findingPlain.trim(),
-        technical_explanation: findingTechnical.trim() || null,
-        severity: findingSeverity,
-        affected_component: findingComponent.trim() || 'General Structure',
-        supporting_evidence: findingEvidence.trim() || null,
-        recommended_intervention: findingRecommendation.trim() || null,
-      };
-
-      if (isDemo) {
-        await createDemoAssetFinding();
-      } else {
-        await createAssetFinding(assetId, payload);
-      }
-      setShowAddFindingModal(false);
-      setFindingTitle('');
-      setFindingPlain('');
-      setFindingTechnical('');
-      setFindingComponent('');
-      setFindingEvidence('');
-      setFindingRecommendation('');
-      await loadIntelligence();
-    } catch (err) {
-      setFindingError(err.message || 'Failed to create finding.');
-    } finally {
-      setSubmittingFinding(false);
-    }
-  };
-
-  const tabs = [
-    { id: 'overview', label: 'Identity & Overview', count: null },
-    { id: 'timeline', label: 'History & Timeline', count: timeline.length },
-    { id: 'media', label: 'Images & Visual Evidence', count: media.length },
-    { id: 'heartbeat', label: 'Condition & Heartbeat', count: heartbeat ? `${heartbeat.risk_score.toFixed(0)}` : null },
-    { id: 'findings', label: 'Findings & Recommendations', count: findings.length },
-    { id: 'sources', label: 'Sources & Provenance', count: sources.length },
-  ];
-
   return (
-    <div
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden animate-fadeIn"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="asset-intel-title"
-    >
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
-        {/* Profile Header */}
-        <div className="p-5 sm:p-6 border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-green-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-green-700 text-white flex items-center justify-center shadow-md shadow-green-700/20 shrink-0">
-              <Building2 className="w-6 h-6 stroke-[2.2]" />
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex justify-center p-2 sm:p-4 lg:p-6 animate-in fade-in duration-150">
+      <div className="bg-white w-full max-w-7xl rounded-2xl shadow-2xl border border-slate-200 flex flex-col my-auto max-h-[94vh] overflow-hidden">
+        {/* =========================================================================
+            HEADER & GLOBAL ACTIONS
+            ========================================================================= */}
+        <div className="p-4 sm:p-5 border-b border-slate-200 bg-white flex items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0">
+              <img
+                src={getAssetThumbnail(currentAsset.id) || getAssetHeroImage(currentAsset.id)}
+                alt={currentAsset.name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-mono font-bold text-slate-500 uppercase tracking-wider bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                  {asset?.id || assetId}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                  {currentAsset.id}
                 </span>
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-green-100 text-green-800 border border-green-200">
-                  {asset?.category || 'Infrastructure'}
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-800 border border-green-200">
+                  {currentAsset.category}
                 </span>
-                {asset?.status && <StatusBadge status={asset.status} size="sm" />}
-              </div>
-              <h2 id="asset-intel-title" className="text-lg sm:text-xl font-bold text-slate-900 mt-1">
-                {asset?.name || 'Infrastructure Asset Profile'}
-              </h2>
-              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 mt-1">
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  {asset?.district}, {asset?.state}
-                </span>
-                {asset?.ownership_authority && (
-                  <span className="flex items-center gap-1 font-medium text-slate-700">
-                    <Compass className="w-3.5 h-3.5 text-green-700" />
-                    {asset.ownership_authority}
+                {isDemo && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold border border-amber-300">
+                    Demo Mode Specimen
                   </span>
                 )}
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  Built: {asset?.construction_year || 'Unrecorded'}
-                </span>
               </div>
+              <h1 className="text-lg sm:text-xl font-black text-slate-900 truncate">
+                {currentAsset.name}
+              </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* Data Completeness Pill */}
-            <div className="hidden md:flex flex-col items-end px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
-              <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                Data Completeness
-              </span>
-              <div className="flex items-center gap-2 mt-0.5">
-                <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                  <div
-                    className="h-full bg-green-700 rounded-full transition-all duration-500"
-                    style={{ width: `${completeness.percentage}%` }}
-                  />
-                </div>
-                <span className="text-xs font-bold text-slate-800">
-                  {completeness.percentage}%
-                </span>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={handleExecuteAIAnalysis}
+              disabled={runningAi || loading}
+              className="px-3.5 py-2 rounded-xl bg-green-700 hover:bg-green-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              title="Execute full 5-module condition assessment and risk prioritization"
+            >
+              {runningAi ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="hidden sm:inline">Analyzing...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Run Cloud Intelligence</span>
+                </>
+              )}
+            </button>
 
             <button
-              onClick={loadIntelligence}
-              disabled={loading}
-              className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors border border-slate-200 cursor-pointer"
-              title="Refresh intelligence data"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-green-700' : ''}`} />
-            </button>
-            <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors border border-slate-200 cursor-pointer"
-              aria-label="Close intelligence profile"
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Close dialog"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="border-b border-slate-200 bg-white px-5 sm:px-6 flex gap-1 sm:gap-2 overflow-x-auto scrollbar-none">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`py-3 px-3 sm:px-4 text-xs sm:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                  isActive
-                    ? 'border-green-700 text-green-800 bg-green-50/50'
-                    : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                }`}
-              >
-                <span>{tab.label}</span>
-                {tab.count !== null && (
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                      isActive
-                        ? 'bg-green-700 text-white'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        {/* =========================================================================
+            STICKY JUMP NAVIGATION ANCHOR BAR
+            ========================================================================= */}
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto text-xs shrink-0 no-scrollbar">
+          {[
+            { id: 'overview', label: 'Overview & Condition' },
+            { id: 'critical-areas', label: `Critical Areas (${criticalAreas.length})`, alert: criticalAreas.length > 0 },
+            { id: 'severity', label: 'Severity Spectrum' },
+            { id: 'prioritized-findings', label: `Prioritized Findings (${prioritizedRisks.length})` },
+            { id: 'intervention-plan', label: `Intervention Plan (${interventionPlan.total_actions})`, badge: interventionPlan.immediate_count > 0 ? `${interventionPlan.immediate_count} Immediate` : null },
+            { id: 'five-modules', label: '5 Modules Assessment' },
+            { id: 'evidence', label: `Evidence (${intel?.sources?.length || 0})` },
+            { id: 'history', label: 'Audit History' },
+            { id: 'verification', label: 'Engineer Verification' },
+            { id: 'copilot', label: 'Decision Assistant' },
+          ].map((sec) => (
+            <button
+              key={sec.id}
+              type="button"
+              onClick={() => {
+                setActiveSection(sec.id);
+                const el = document.getElementById(`section-${sec.id}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className={`px-3 py-1.5 rounded-lg font-semibold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeSection === sec.id
+                  ? 'bg-green-700 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
+              }`}
+            >
+              <span>{sec.label}</span>
+              {sec.alert && (
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              )}
+              {sec.badge && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  activeSection === sec.id ? 'bg-white text-green-800' : 'bg-red-100 text-red-800'
+                }`}>
+                  {sec.badge}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
 
-        {/* Tab Content Body */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 bg-slate-50">
-          {loading && !intel ? (
-            <div className="py-20 flex flex-col items-center justify-center gap-3">
-              <Loader2 className="w-8 h-8 text-green-700 animate-spin" />
-              <p className="text-xs uppercase tracking-widest text-slate-500 font-medium">
-                Synthesizing Infrastructure Intelligence Profile...
+        {/* =========================================================================
+            MAIN SCROLLABLE CONTENT BODY (11-SECTION HIERARCHY)
+            ========================================================================= */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-8 bg-slate-50/50">
+          {loading ? (
+            <div className="py-24 text-center space-y-3">
+              <Loader2 className="w-10 h-10 text-green-700 animate-spin mx-auto" />
+              <p className="text-sm font-bold text-slate-800">
+                Loading complete infrastructure intelligence profile...
+              </p>
+              <p className="text-xs text-slate-500 font-mono">
+                Compiling Digital Heartbeat, component taxonomy, and verified audit archives.
               </p>
             </div>
           ) : error ? (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
-              <span>{error}</span>
+            <div className="p-5 rounded-2xl bg-red-50 border border-red-200 text-red-900 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <AlertCircle className="w-5 h-5 text-red-700 shrink-0" />
+                <span>Failed to load intelligence profile</span>
+              </div>
+              <p className="text-xs font-mono text-red-800">{error}</p>
+              <button
+                type="button"
+                onClick={loadData}
+                className="px-4 py-2 rounded-xl bg-red-700 text-white text-xs font-semibold hover:bg-red-800 transition-colors"
+              >
+                Retry Loading
+              </button>
             </div>
           ) : (
             <>
-              {/* TAB 1: IDENTITY & OVERVIEW */}
-              {activeTab === 'overview' && (
-                <div className="space-y-6">
-                  {/* Top Stats Overview */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Operational Status
-                      </span>
-                      <div className="mt-2 flex items-center gap-2">
-                        <StatusBadge status={asset?.status} size="md" />
-                      </div>
-                      <p className="text-xs text-slate-500 mt-2">
-                        Last Audit: {asset?.last_inspection_date || 'No recent audit'}
-                      </p>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Digital Heartbeat
-                      </span>
-                      <div className="mt-2 flex items-baseline gap-2">
-                        <span className="text-2xl font-black text-slate-900">
-                          {heartbeat ? heartbeat.risk_score.toFixed(1) : asset?.risk_score?.toFixed(1) || '0.0'}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-500">/ 100 Risk</span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-600">
-                        <span className="font-medium">Health Index:</span>
-                        <span className="font-bold text-green-700">
-                          {heartbeat ? heartbeat.health_index.toFixed(1) : asset?.health_index?.toFixed(1) || 'N/A'}/100
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Geographic Coordinates
-                      </span>
-                      <div className="mt-2 flex items-baseline gap-1 font-mono text-sm font-bold text-slate-800">
-                        <span>{asset?.latitude?.toFixed(4)}°N</span>, <span>{asset?.longitude?.toFixed(4)}°E</span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {asset?.district}, {asset?.state}
-                      </p>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Audit Completeness
-                      </span>
-                      <div className="mt-2 flex items-baseline gap-2">
-                        <span className="text-2xl font-black text-green-800">
-                          {completeness.percentage}%
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          ({completeness.verified_fields.length}/{completeness.total_fields} verified)
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {completeness.missing_fields.length === 0
-                          ? 'Zero unverified data parameters'
-                          : `Missing: ${completeness.missing_fields.join(', ')}`}
-                      </p>
-                    </div>
+              {/* Notification Banner on AI Run */}
+              {aiSuccessMessage && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-950 flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span className="font-semibold">{aiSuccessMessage}</span>
                   </div>
-
-                  {/* Asset Description & Identity Card */}
-                  <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-green-700" />
-                      Engineering Specifications & Identity
-                    </h3>
-                    <p className="text-sm text-slate-700 leading-relaxed">
-                      {asset?.description || 'No engineering narrative provided for this infrastructure asset.'}
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100 text-xs">
-                      <div>
-                        <span className="text-slate-500 block">Responsible Authority</span>
-                        <span className="font-semibold text-slate-800 mt-0.5 block">
-                          {asset?.ownership_authority || 'Unassigned / Unrecorded in Registry'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block">Commissioning & Construction</span>
-                        <span className="font-semibold text-slate-800 mt-0.5 block">
-                          {asset?.construction_year ? `Year ${asset.construction_year}` : 'Date Unknown'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block">Telemetry Telemetry Source</span>
-                        <span className="font-semibold text-slate-800 mt-0.5 block truncate">
-                          {asset?.data_source || 'Standard Registry Entry'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Flagged Reasons (if any) */}
-                  {Array.isArray(asset?.flagged_reasons) && asset.flagged_reasons.length > 0 && (
-                    <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 shadow-xs space-y-2">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-amber-600" />
-                        Identified Vulnerabilities & Flagged Conditions
-                      </h4>
-                      <ul className="space-y-1.5">
-                        {asset.flagged_reasons.map((reason, idx) => (
-                          <li key={idx} className="text-xs text-amber-800 flex items-start gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                            <span>{reason}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setAiSuccessMessage(null)}
+                    className="text-emerald-700 hover:text-emerald-900 text-xs font-bold"
+                  >
+                    Dismiss
+                  </button>
                 </div>
               )}
 
-              {/* TAB 2: HISTORY & TIMELINE */}
-              {activeTab === 'timeline' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">
-                        Chronological Audit & Life-Cycle History
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        Documented milestones, engineering inspections, and verified interventions.
-                      </p>
+              {/* =========================================================================
+                  SECTION 1: ASSET OVERVIEW & CONDITION SUMMARY
+                  ========================================================================= */}
+              <section id="section-overview" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-5">
+                {/* Overall Operational Status Directive Banner */}
+                <div className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${conditionSummary.status_bg}`}>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="w-5 h-5 text-current shrink-0" />
+                      <span className="text-xs uppercase font-extrabold tracking-wider">
+                        Overall Infrastructure Status
+                      </span>
                     </div>
-                    {onOpenInspections && (
-                      <button
-                        onClick={() => onOpenInspections(asset)}
-                        className="px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                      >
-                        <PlusCircle className="w-3.5 h-3.5" />
-                        <span>Manage Inspections</span>
-                      </button>
-                    )}
+                    <h2 className="text-xl font-black">{conditionSummary.overall_status}</h2>
+                    <p className="text-xs leading-relaxed max-w-3xl opacity-90">
+                      {conditionSummary.status_directive}
+                    </p>
                   </div>
 
-                  {timeline.length === 0 ? (
-                    <div className="py-12 text-center bg-white rounded-xl border border-slate-200">
-                      <History className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                      <p className="text-sm font-semibold text-slate-700">No historical events recorded</p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Historical inspections or maintenance records have not been filed for this asset yet.
-                      </p>
+                  <div className="flex items-center gap-4 shrink-0 bg-white/80 backdrop-blur-xs p-3 rounded-xl border border-current/20">
+                    <div className="text-center">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Risk Score</span>
+                      <span className="text-xl font-black text-slate-900 font-mono">
+                        {conditionSummary.risk_score}/100
+                      </span>
                     </div>
-                  ) : (
-                    <div className="relative pl-6 space-y-6 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                      {timeline.map((event, idx) => {
-                        const isVerified = event.is_verified || event.type === 'intervention_verified';
-                        return (
-                          <div key={idx} className="relative group">
-                            {/* Marker dot */}
-                            <div
-                              className={`absolute -left-[23px] top-1.5 w-3.5 h-3.5 rounded-full border-2 bg-white transition-colors ${
-                                isVerified
-                                  ? 'border-green-600 ring-2 ring-green-100'
-                                  : 'border-slate-400'
-                              }`}
-                            />
-                            <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-colors">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-slate-900">
-                                  {event.title}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    {event.date || 'Date Unknown'}
-                                  </span>
-                                  <span
-                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                                      isVerified
-                                        ? 'bg-green-100 text-green-800 border border-green-200'
-                                        : 'bg-slate-100 text-slate-700 border border-slate-200'
-                                    }`}
-                                  >
-                                    {isVerified ? 'Documented Fact' : 'Registry Entry'}
-                                  </span>
-                                </div>
-                              </div>
-                              <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                                {event.description}
+                    <div className="h-8 w-px bg-slate-200" />
+                    <div className="text-center">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Health Index</span>
+                      <span className="text-xl font-black text-green-700 font-mono">
+                        {conditionSummary.health_index}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Key Metrics KPI Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                  <div className="p-3 rounded-xl bg-red-50/70 border border-red-200 text-center">
+                    <span className="text-[10px] uppercase font-bold text-red-700 block">Critical Areas</span>
+                    <span className="text-2xl font-black text-red-800 font-mono">{conditionSummary.critical_count}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-orange-50/70 border border-orange-200 text-center">
+                    <span className="text-[10px] uppercase font-bold text-orange-700 block">High Priority</span>
+                    <span className="text-2xl font-black text-orange-800 font-mono">{conditionSummary.high_count}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-center">
+                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Moderate</span>
+                    <span className="text-2xl font-black text-amber-800 font-mono">{conditionSummary.moderate_count}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 text-center">
+                    <span className="text-[10px] uppercase font-bold text-blue-700 block">Low / Routine</span>
+                    <span className="text-2xl font-black text-blue-800 font-mono">{conditionSummary.low_count}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-purple-50/70 border border-purple-200 text-center">
+                    <span className="text-[10px] uppercase font-bold text-purple-700 block">Pending Reviews</span>
+                    <span className="text-2xl font-black text-purple-800 font-mono">{conditionSummary.pending_reviews}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                    <span className="text-[10px] uppercase font-bold text-slate-600 block">Data Gaps</span>
+                    <span className="text-2xl font-black text-slate-700 font-mono">{conditionSummary.data_gaps_count}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-green-50/70 border border-green-200 text-center">
+                    <span className="text-[10px] uppercase font-bold text-green-700 block">Completeness</span>
+                    <span className="text-2xl font-black text-green-800 font-mono">{intel?.completeness?.percentage || 95}%</span>
+                  </div>
+                </div>
+
+                {/* Asset Metadata & Ownership Ledger */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs text-slate-700 pt-1 border-t border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 block uppercase font-semibold">Location</span>
+                      <span className="font-bold text-slate-800">{currentAsset.district}, {currentAsset.state}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 block uppercase font-semibold">Commission Year</span>
+                      <span className="font-bold text-slate-800">{currentAsset.construction_year || 'N/A'} (Age: {new Date().getFullYear() - (currentAsset.construction_year || 1990)} yrs)</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 block uppercase font-semibold">Responsible Authority</span>
+                      <span className="font-bold text-slate-800">{currentAsset.ownership_authority || 'State Public Works Department (PWD)'}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 block uppercase font-semibold">Last Certified Inspection</span>
+                      <span className="font-bold text-slate-800">{currentAsset.last_inspection_date || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* =========================================================================
+                  SECTION 2: CRITICAL INFRASTRUCTURE AREAS (HIGH PROMINENCE)
+                  ========================================================================= */}
+              <section id="section-critical-areas" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
+                      <h2 className="text-lg font-black text-slate-900 tracking-tight">
+                        Critical Infrastructure Areas ({criticalAreas.length})
+                      </h2>
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      High-severity physical components requiring immediate intervention, consequence containment, and authorized engineering sign-off.
+                    </p>
+                  </div>
+                  <span className="font-mono text-xs px-2.5 py-1 rounded bg-red-50 text-red-800 border border-red-200 font-bold shrink-0">
+                    Highest Hazard Priority
+                  </span>
+                </div>
+
+                {criticalAreas.length > 0 ? (
+                  <div className="space-y-4">
+                    {criticalAreas.map((area, idx) => (
+                      <div
+                        key={area.id || idx}
+                        className="rounded-xl border-2 border-red-300 bg-white p-5 shadow-xs space-y-4 transition-all hover:border-red-400"
+                      >
+                        {/* Area Title & Key Badges */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-[10px] uppercase font-black px-2 py-0.5 rounded bg-red-600 text-white">
+                                Critical Area {String(idx + 1).padStart(2, '0')}
+                              </span>
+                              <span className="text-xs font-bold text-red-800 bg-red-100 border border-red-200 px-2.5 py-0.5 rounded-full">
+                                {area.severity_name || 'Level 1 — Critical'}
+                              </span>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-semibold">
+                                {area.evidence_classification || 'Documented'}
+                              </span>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                Confidence: {area.confidence_level || 'High'}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                area.verification_status === 'Verified'
+                                  ? 'bg-green-100 text-green-800 border border-green-300'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+                              }`}>
+                                {area.verification_status || 'Pending Verification'}
+                              </span>
+                            </div>
+
+                            <h3 className="text-base font-black text-slate-900">
+                              {area.affected_component}
+                            </h3>
+
+                            <p className="text-xs font-mono text-slate-500 flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                              <span className="font-semibold text-slate-700">Location:</span>
+                              <span>{area.exact_location}</span>
+                            </p>
+                          </div>
+
+                          <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-right shrink-0">
+                            <span className="text-[10px] uppercase font-bold text-red-700 block">Risk Contribution</span>
+                            <span className="text-sm font-black font-mono text-red-900">
+                              +{area.risk_contribution_pts || 28.5} pts to Heartbeat
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 10-Point Analysis Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                          {/* Left Column: Observed Condition & Consequences */}
+                          <div className="space-y-3">
+                            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                              <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider flex items-center gap-1.5">
+                                <Eye className="w-3.5 h-3.5 text-green-700" />
+                                <span>Observed Actual Condition</span>
+                              </span>
+                              <p className="text-slate-800 font-medium leading-relaxed">
+                                {area.plain_explanation || area.title}
                               </p>
-                              {event.responsible_user && (
-                                <p className="text-[11px] text-slate-500 mt-2 font-medium">
-                                  Lead Inspector / Authority: <span className="text-slate-700">{event.responsible_user}</span>
+                              {area.technical_explanation && (
+                                <p className="text-[11px] font-mono text-slate-600 pt-1 border-t border-slate-200 leading-snug">
+                                  {area.technical_explanation}
                                 </p>
                               )}
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* TAB 3: IMAGES & VISUAL EVIDENCE */}
-              {activeTab === 'media' && (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-                      {['All', 'Visible Damage', 'Structural Components', 'General Infrastructure', 'Inspection Photographs'].map((cat) => (
-                        <button
-                          key={cat}
-                          onClick={() => setMediaFilter(cat)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                            mediaFilter === cat
-                              ? 'bg-green-700 text-white'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={() => setShowUploadModal(true)}
-                      className="px-3.5 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs self-start sm:self-auto"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Upload Evidence Media</span>
-                    </button>
-                  </div>
-
-                  {filteredMedia.length === 0 ? (
-                    <div className="py-14 text-center bg-white rounded-xl border border-slate-200">
-                      <ImageIcon className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                      <p className="text-sm font-semibold text-slate-700">No infrastructure media available</p>
-                      <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                        No verified photographs or diagrams have been submitted under category "{mediaFilter}". Click upload to attach verified imagery.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredMedia.map((m) => (
-                        <div
-                          key={m.id}
-                          className="group bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md hover:border-slate-300 transition-all flex flex-col"
-                        >
-                          <div
-                            onClick={() => setSelectedImage(m)}
-                            className="relative h-44 bg-slate-100 overflow-hidden cursor-pointer"
-                          >
-                            <img
-                              src={m.media_url}
-                              alt={m.caption}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = '/api/media/placeholder.svg';
-                              }}
-                            />
-                            <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/30 transition-colors flex items-center justify-center">
-                              <span className="opacity-0 group-hover:opacity-100 p-2 rounded-full bg-white/90 text-slate-900 shadow-md transition-opacity">
-                                <Maximize2 className="w-4 h-4" />
+                            <div className="p-3.5 rounded-xl bg-red-50/70 border border-red-200 text-red-950 space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-red-700 tracking-wider flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                                <span>Potential Consequences (Risk Scenario)</span>
                               </span>
-                            </div>
-                            <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/95 text-slate-800 shadow-xs border border-slate-200">
-                              {m.category}
-                            </span>
-                          </div>
-
-                          <div className="p-3.5 flex-1 flex flex-col justify-between">
-                            <div>
-                              <p className="text-xs font-semibold text-slate-900 line-clamp-2">
-                                {m.caption}
+                              <p className="text-xs leading-relaxed font-medium">
+                                {area.potential_consequences}
                               </p>
-                              <div className="flex items-center gap-1.5 mt-2 text-[11px] text-slate-500">
-                                <FileCheck className="w-3.5 h-3.5 text-green-700 shrink-0" />
-                                <span className="truncate">{m.verification_status}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] text-slate-400 mt-3 pt-2 border-t border-slate-100">
-                              <span>Captured: {m.capture_date || 'Unknown'}</span>
-                              <span className="truncate max-w-[120px]">{m.source_uploader}</span>
                             </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* TAB 4: CONDITION & HEARTBEAT */}
-              {activeTab === 'heartbeat' && (
-                <div className="space-y-6">
-                  {/* Heartbeat Gauge & Metrics */}
-                  <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Activity className="w-5 h-5 text-green-700" />
-                          <h3 className="text-base font-bold text-slate-900">
-                            Digital Heartbeat Telemetry & Degradation Model
-                          </h3>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">
-                          Authoritative deterministic 4-factor risk calculation from backend engine.
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                            Risk Tier
-                          </span>
-                          <span className={`text-sm font-bold ${
-                            heartbeat?.risk_tier === 'Critical' ? 'text-red-700' :
-                            heartbeat?.risk_tier === 'High' ? 'text-amber-700' :
-                            heartbeat?.risk_tier === 'Moderate' ? 'text-yellow-700' : 'text-green-700'
-                          }`}>
-                            {heartbeat?.risk_tier || 'Moderate'}
-                          </span>
-                        </div>
-                        <div className="w-px h-8 bg-slate-200" />
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                            Confidence
-                          </span>
-                          <span className="text-sm font-bold text-slate-800">
-                            {heartbeat ? (heartbeat.data_confidence_score * 100).toFixed(0) : '90'}%
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Contributing Factors Breakdown */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                      {(heartbeat?.contributing_factors || []).map((factor) => (
-                        <div
-                          key={factor.id}
-                          className="p-4 rounded-xl bg-slate-50/70 border border-slate-200 space-y-2"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-800">
-                              {factor.name}
-                            </span>
-                            <span className="text-xs font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
-                              {factor.score.toFixed(1)} / 100
-                            </span>
-                          </div>
-                          <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${
-                                factor.score >= 70 ? 'bg-red-600' :
-                                factor.score >= 40 ? 'bg-amber-500' : 'bg-green-600'
-                              }`}
-                              style={{ width: `${Math.min(100, Math.max(0, factor.score))}%` }}
-                            />
-                          </div>
-                          <p className="text-[11px] text-slate-600 leading-relaxed">
-                            {factor.explanation}
-                          </p>
-                          <p className="text-[10px] text-slate-500 italic">
-                            Evidence: {factor.supporting_evidence}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Suggested Engineering Investigations */}
-                  {Array.isArray(heartbeat?.suggested_investigations) && heartbeat.suggested_investigations.length > 0 && (
-                    <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                        <ShieldAlert className="w-4 h-4 text-green-700" />
-                        Recommended Next Investigations & Priority Interventions
-                      </h4>
-                      <div className="space-y-2">
-                        {heartbeat.suggested_investigations.map((inv, idx) => (
-                          <div
-                            key={idx}
-                            className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-start justify-between gap-3"
-                          >
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-slate-800">{inv.title}</span>
-                                <span className={`text-[10px] font-bold px-2 py-0.2 rounded-full uppercase ${
-                                  inv.priority === 'High' ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-slate-200 text-slate-800'
-                                }`}>
-                                  {inv.priority} Priority
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-600 mt-1">{inv.detail}</p>
-                            </div>
-                            <span className="text-[10px] text-slate-400 shrink-0 font-mono">
-                              Rec #{idx + 1}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 5: FINDINGS & RECOMMENDATIONS */}
-              {activeTab === 'findings' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">
-                        Observed Engineering Findings & Defects
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        Individual structured defect records with evidence linkages and resolution status.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setShowAddFindingModal(true)}
-                      className="px-3.5 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                    >
-                      <PlusCircle className="w-3.5 h-3.5" />
-                      <span>Register Finding</span>
-                    </button>
-                  </div>
-
-                  {findings.length === 0 ? (
-                    <div className="py-14 text-center bg-white rounded-xl border border-slate-200">
-                      <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                      <p className="text-sm font-semibold text-slate-700">No acute findings registered</p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Infrastructure baseline has zero recorded defect anomalies.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {findings.map((f) => (
-                        <div
-                          key={f.id}
-                          className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-3 hover:border-slate-300 transition-colors"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
-                                  f.severity === 'Critical' ? 'bg-red-100 text-red-800 border border-red-200' :
-                                  f.severity === 'High' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                                  f.severity === 'Medium' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
-                                  'bg-green-100 text-green-800 border border-green-200'
-                                }`}
-                              >
-                                {f.severity}
+                          {/* Right Column: Immediate Action, Discipline & Evidence */}
+                          <div className="space-y-3">
+                            <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-300 text-amber-950 space-y-1.5">
+                              <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider flex items-center gap-1.5">
+                                <Zap className="w-3.5 h-3.5 text-amber-700" />
+                                <span>Immediate Required Action (Within 24–48 Hours)</span>
                               </span>
-                              <h4 className="text-sm font-bold text-slate-900">{f.title}</h4>
-                            </div>
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                              Status: {f.resolution_status}
-                            </span>
-                          </div>
-
-                          <div className="space-y-1.5 text-xs">
-                            <p className="text-slate-800 font-medium leading-relaxed">
-                              {f.plain_explanation}
-                            </p>
-                            {f.technical_explanation && (
-                              <p className="text-slate-600 font-mono text-[11px] bg-slate-50 p-2 rounded border border-slate-100">
-                                Technical Note: {f.technical_explanation}
+                              <p className="text-xs leading-relaxed font-semibold text-amber-950">
+                                {area.immediate_action}
                               </p>
-                            )}
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-[11px]">
-                            <div>
-                              <span className="text-slate-500 block">Affected Component</span>
-                              <span className="font-semibold text-slate-800">{f.affected_component}</span>
-                            </div>
-                            <div>
-                              <span className="text-slate-500 block">Supporting Evidence</span>
-                              <span className="font-semibold text-slate-800">{f.supporting_evidence || 'Direct Sensor Reading'}</span>
-                            </div>
-                          </div>
-
-                          {f.recommended_intervention && (
-                            <div className="p-2.5 rounded-lg bg-green-50/60 border border-green-200 text-xs text-green-900 flex items-start gap-2">
-                              <ShieldCheck className="w-4 h-4 text-green-700 shrink-0 mt-0.5" />
-                              <div>
-                                <span className="font-bold">Recommended Intervention: </span>
-                                <span>{f.recommended_intervention}</span>
+                              <div className="text-[11px] text-amber-900 pt-1 border-t border-amber-200 font-medium">
+                                <span className="font-bold">Required Approval:</span> {area.approval_required}
                               </div>
                             </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* TAB 6: SOURCES & PROVENANCE */}
-              {activeTab === 'sources' && (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">
-                      Traceable Evidence Sources & Grounded Provenance
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Factual claims corroborated by official documents, telemetry feeds, and field surveys.
-                    </p>
-                  </div>
-
-                  {sources.length === 0 ? (
-                    <div className="py-14 text-center bg-white rounded-xl border border-slate-200">
-                      <FileCheck className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                      <p className="text-sm font-semibold text-slate-700">No primary sources attached</p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        No external audit files or telemetry sources mapped to this asset ID.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {sources.map((s) => (
-                        <div
-                          key={s.id}
-                          className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs space-y-3 hover:border-slate-300 transition-colors"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wider">
-                                {s.source_type}
+                            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                              <span className="text-[10px] uppercase font-bold text-slate-600 tracking-wider flex items-center gap-1.5">
+                                <Wrench className="w-3.5 h-3.5 text-green-700" />
+                                <span>Recommended Further Investigation</span>
                               </span>
-                              <h4 className="text-xs font-bold text-slate-900">{s.title}</h4>
+                              <p className="text-xs text-slate-700 leading-relaxed">
+                                {area.further_investigation}
+                              </p>
+                              <div className="text-[11px] text-slate-600 pt-1 border-t border-slate-200">
+                                <span className="font-bold text-slate-700">Responsible Wing:</span>{' '}
+                                <span className="font-mono text-slate-900">{area.responsible_discipline}</span>
+                              </div>
                             </div>
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-800 border border-green-200 flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-green-700" />
-                              {s.verification_status}
-                            </span>
                           </div>
+                        </div>
 
-                          {s.exact_excerpt && (
-                            <blockquote className="text-xs text-slate-700 italic bg-slate-50 border-l-2 border-green-700 pl-3 py-1.5 rounded-r">
-                              "{s.exact_excerpt}"
-                            </blockquote>
-                          )}
-
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-2 border-t border-slate-100">
-                            <div className="flex items-center gap-3 text-slate-600">
-                              <span>Origin: <strong className="text-slate-800">{s.origin_provider}</strong></span>
-                              {s.page_reference && (
-                                <span>Ref: <strong className="text-slate-800">{s.page_reference}</strong></span>
-                              )}
-                            </div>
-
-                            {onOpenDocument && s.document_name && (
+                        {/* Evidence Provenance Footer & Engineer Review Triggers */}
+                        <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2 text-slate-600">
+                            <BookOpen className="w-3.5 h-3.5 text-green-700 shrink-0" />
+                            <span className="font-semibold text-slate-700">Supporting Evidence:</span>
+                            <span className="font-mono text-[11px] text-slate-800 truncate max-w-sm" title={area.source_document || area.supporting_evidence}>
+                              {area.source_document || area.supporting_evidence || 'Certified Inspection Report'}
+                            </span>
+                            {area.source_document && onOpenDocument && (
                               <button
-                                onClick={() => onOpenDocument(s.document_name)}
-                                className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                type="button"
+                                onClick={() => onOpenDocument(area.source_document)}
+                                className="text-green-700 hover:underline font-semibold ml-1 cursor-pointer"
                               >
-                                <FileText className="w-3.5 h-3.5 text-green-700" />
-                                <span>Inspect Source Document</span>
-                                <ExternalLink className="w-3 h-3 text-slate-400" />
+                                View PDF
                               </button>
                             )}
                           </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReviewingFinding(area);
+                                setReviewDecision('Verified');
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Verify Area</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReviewingFinding(area);
+                                setReviewDecision('Requires Further Inspection');
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+                            >
+                              Request Audit
+                            </button>
+                          </div>
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 rounded-xl bg-green-50 border border-green-200 text-center space-y-1">
+                    <CheckCircle2 className="w-8 h-8 text-green-600 mx-auto" />
+                    <p className="text-sm font-bold text-green-900">
+                      No Critical Areas Identified in Active Records
+                    </p>
+                    <p className="text-xs text-green-700">
+                      All inspected components remain within nominal engineering safety margins.
+                    </p>
+                  </div>
+                )}
+              </section>
+
+              {/* =========================================================================
+                  SECTION 3: RISK SEVERITY & COMPONENT INVENTORY SPECTRUM
+                  ========================================================================= */}
+              <section id="section-severity" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900">
+                      Multi-Level Severity Spectrum & Component Inventory
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Standardized 5-level severity classification distinguishing known defects from nominal operational and uninspected data gaps.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono text-slate-500">
+                    Total Evaluated Components: {componentInventory.length}
+                  </span>
+                </div>
+
+                {/* Severity Spectrum Filter Buttons */}
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                  {[
+                    { id: 'all', label: 'All Components', count: componentInventory.length, color: 'bg-slate-800 text-white' },
+                    { id: '1', label: 'Level 1: Critical', count: componentInventory.filter((c) => c.status_level === 1).length, color: 'bg-red-100 text-red-800 border border-red-300' },
+                    { id: '2', label: 'Level 2: High', count: componentInventory.filter((c) => c.status_level === 2).length, color: 'bg-orange-100 text-orange-800 border border-orange-300' },
+                    { id: '3', label: 'Level 3: Moderate', count: componentInventory.filter((c) => c.status_level === 3).length, color: 'bg-amber-100 text-amber-800 border border-amber-300' },
+                    { id: '5', label: 'Level 5: Nominal', count: componentInventory.filter((c) => c.status_level === 5).length, color: 'bg-green-100 text-green-800 border border-green-300' },
+                    { id: '0', label: 'Data Gaps', count: componentInventory.filter((c) => c.status_level === 0).length, color: 'bg-slate-100 text-slate-700 border border-slate-300' },
+                  ].map((btn) => {
+                    const isSelected = severityFilter === btn.id;
+                    return (
+                      <button
+                        key={btn.id}
+                        type="button"
+                        onClick={() => setSeverityFilter(btn.id)}
+                        className={`p-3 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                          isSelected
+                            ? 'ring-2 ring-green-600 bg-white border-green-600 shadow-2xs'
+                            : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-slate-900 truncate">{btn.label}</span>
+                          <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded ${btn.color}`}>
+                            {btn.count}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500">
+                          {btn.id === '1' && 'Immediate Threat'}
+                          {btn.id === '2' && 'Urgent Correction'}
+                          {btn.id === '3' && 'Planned Maintenance'}
+                          {btn.id === '5' && 'Inspected Baseline'}
+                          {btn.id === '0' && 'Not Yet Audited'}
+                          {btn.id === 'all' && 'Master Inventory'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Component Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                  {filteredComponents.map((comp, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3.5 rounded-xl bg-white border border-slate-200 hover:border-slate-300 shadow-2xs space-y-2 flex flex-col justify-between"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                              {comp.subsystem} &bull; {comp.discipline}
+                            </span>
+                            <h4 className="text-xs font-bold text-slate-900">
+                              {comp.component_name}
+                            </h4>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${comp.badge_class}`}>
+                            {comp.status_label}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-700 leading-relaxed">
+                          {comp.condition_summary}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                        <span className="font-semibold text-slate-700">Urgency: {comp.action_urgency}</span>
+                        {comp.evidence_reference && (
+                          <span className="truncate max-w-[140px]" title={comp.evidence_reference}>
+                            Ref: {comp.evidence_reference}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* =========================================================================
+                  SECTION 4: PRIORITIZED FINDINGS MATRIX
+                  ========================================================================= */}
+              <section id="section-prioritized-findings" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900">
+                      Prioritized Infrastructure Findings Matrix
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Rigorous prioritization ordered by severity, potential consequences, evidence quality, and Digital Heartbeat risk weighting.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-green-700">
+                    {prioritizedRisks.length} Actionable Findings
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-800">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      <tr>
+                        <th className="py-2.5 px-3">Priority</th>
+                        <th className="py-2.5 px-3">Infrastructure Area & Component</th>
+                        <th className="py-2.5 px-3">Observed Condition</th>
+                        <th className="py-2.5 px-3">Severity & Domain</th>
+                        <th className="py-2.5 px-3">Consequences & Required Response</th>
+                        <th className="py-2.5 px-3">Discipline</th>
+                        <th className="py-2.5 px-3 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {prioritizedRisks.map((item) => (
+                        <tr key={item.finding_id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3 px-3 font-mono font-black text-slate-900 text-sm">
+                            #{item.priority}
+                          </td>
+                          <td className="py-3 px-3 space-y-0.5">
+                            <span className="font-bold text-slate-900 block">{item.affected_component}</span>
+                            <span className="text-[10px] text-slate-500 font-mono block">{item.exact_location}</span>
+                          </td>
+                          <td className="py-3 px-3 max-w-xs text-slate-700 leading-snug">
+                            {item.observed_condition || item.title}
+                          </td>
+                          <td className="py-3 px-3 space-y-1">
+                            <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              item.severity_level === 1 ? 'bg-red-100 text-red-800 border border-red-200'
+                              : item.severity_level === 2 ? 'bg-orange-100 text-orange-800 border border-orange-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                            }`}>
+                              {item.severity}
+                            </span>
+                            <span className="block text-[10px] font-mono text-slate-500">
+                              {item.category}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 space-y-1 max-w-sm">
+                            <p className="text-[11px] font-medium text-slate-900 line-clamp-2">
+                              {item.required_response}
+                            </p>
+                            <p className="text-[10px] text-slate-500 italic line-clamp-1">
+                              Impact: {item.potential_consequences}
+                            </p>
+                          </td>
+                          <td className="py-3 px-3 text-[11px] font-mono text-slate-600">
+                            {item.responsible_discipline}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                              item.verification_status === 'Verified'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {item.verification_status}
+                            </span>
+                          </td>
+                        </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              {/* =========================================================================
+                  SECTION 5: IMMEDIATE ACTIONS & INTERVENTION PLAN (3 STAGES)
+                  ========================================================================= */}
+              <section id="section-intervention-plan" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-green-700" />
+                      <span>Immediate Actions & Intervention Plan</span>
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Three-stage structured response matrix separating immediate hazard containment from corrective repairs and long-term prevention.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-xs">
+                    <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold">
+                      {interventionPlan.immediate_count} Immediate
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">
+                      {interventionPlan.corrective_count} Corrective
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
+                      {interventionPlan.preventive_count} Preventive
+                    </span>
+                  </div>
+                </div>
+
+                {/* Stage Tabs */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { id: 'stage_a', label: 'Stage A — Immediate Response', sub: '0–48 Hours • Urgent Hazard Control', count: interventionPlan.immediate_count, color: 'text-red-700', activeBg: 'bg-red-50 border-red-500' },
+                    { id: 'stage_b', label: 'Stage B — Corrective Intervention', sub: '7–30 Days • Technical Repair Works', count: interventionPlan.corrective_count, color: 'text-amber-700', activeBg: 'bg-amber-50 border-amber-500' },
+                    { id: 'stage_c', label: 'Stage C — Long-Term Prevention', sub: '30–180 Days • Telemetry & Recurrence Guard', count: interventionPlan.preventive_count, color: 'text-blue-700', activeBg: 'bg-blue-50 border-blue-500' },
+                  ].map((tab) => {
+                    const isActive = interventionStageTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setInterventionStageTab(tab.id)}
+                        className={`p-4 rounded-xl text-left border-2 transition-all cursor-pointer ${
+                          isActive
+                            ? `${tab.activeBg} shadow-xs`
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-xs font-black ${tab.color}`}>{tab.label}</span>
+                          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white border border-current shadow-2xs">
+                            {tab.count} Actions
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">{tab.sub}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Active Stage Action Cards */}
+                <div className="space-y-3 pt-2">
+                  {(interventionPlan[interventionStageTab] || []).length > 0 ? (
+                    (interventionPlan[interventionStageTab] || []).map((action, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all space-y-3"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-slate-800 text-white">
+                              {action.priority_rank}
+                            </span>
+                            <h4 className="text-xs font-bold text-slate-900">
+                              {action.action_title}
+                            </h4>
+                          </div>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200 shrink-0">
+                            Timeframe: {action.timeframe}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Required Action</span>
+                            <p className="text-slate-800 leading-relaxed font-medium">
+                              {action.description}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Engineering Justification</span>
+                            <p className="text-slate-600 leading-relaxed italic">
+                              "{action.justification}"
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-600">
+                          <div>
+                            <span className="font-bold text-slate-700">Assigned Department:</span>{' '}
+                            <span className="font-mono text-slate-800">{action.responsible_department}</span>
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-700">Required Approval:</span>{' '}
+                            <span className="text-slate-800 font-medium">{action.required_approval}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-6 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">
+                      No specific actions designated in this stage.
                     </div>
                   )}
                 </div>
-              )}
+              </section>
+
+              {/* =========================================================================
+                  SECTION 6: FIVE INTELLIGENCE MODULES (IMPROVED DOMAIN SYNTHESIS)
+                  ========================================================================= */}
+              <section id="section-five-modules" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900">
+                      5-Module Infrastructure Intelligence Assessment
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Detailed domain synthesis covering structural mechanics, climate exposure, statutory codes, operational loads, and deterioration trends.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Module Selector Tabs */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { id: 'structural', label: 'Structural', desc: 'Cracks, Scour, Girders' },
+                    { id: 'environmental', label: 'Environmental', desc: 'Hydrology, Salinity, Rain' },
+                    { id: 'compliance', label: 'Compliance', desc: 'IRC, CPWD, IS Audits' },
+                    { id: 'operational', label: 'Operational', desc: 'Traffic, SCADA, Motors' },
+                    { id: 'predictive', label: 'Predictive', desc: 'Deterioration Curves' },
+                  ].map((m) => {
+                    const isCur = activeModuleTab === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setActiveModuleTab(m.id)}
+                        className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${
+                          isCur
+                            ? 'bg-green-50 border-green-600 shadow-2xs'
+                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className={`text-xs font-bold block ${isCur ? 'text-green-800' : 'text-slate-800'}`}>
+                          {m.label}
+                        </span>
+                        <span className="text-[10px] text-slate-500 block truncate">{m.desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Section 6 Predictive Safeguard Alert when on predictive tab */}
+                {activeModuleTab === 'predictive' && (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold uppercase tracking-wider text-[11px] block text-amber-900">
+                        Section 6 Predictive Intelligence Safeguard
+                      </span>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        Predictive degradation models require &ge; 3 baseline inspections. Projections represent experimental mathematical trend extrapolations and MUST NOT be treated as engineering-certified design lifespans.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Active Module Narrative Summary */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 space-y-2">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">
+                    {activeModuleTab.toUpperCase()} DOMAIN SYNTHESIS
+                  </span>
+                  <p className="leading-relaxed text-slate-700">
+                    {latestAiRun && latestAiRun[`${activeModuleTab}_summary`]
+                      ? latestAiRun[`${activeModuleTab}_summary`]
+                      : `Active assessment for ${currentAsset.name} in the ${activeModuleTab} domain indicates verified field telemetry is monitored under standard PWD protocols.`}
+                  </p>
+                </div>
+              </section>
+
+              {/* =========================================================================
+                  SECTION 7: EVIDENCE & SOURCE VIEWER
+                  ========================================================================= */}
+              <section id="section-evidence" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-green-700" />
+                      <span>Traceable Evidence & Document Archive</span>
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Indexed engineering inspection reports, bathymetric sonar surveys, field photos, and technical certs.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono text-slate-500">
+                    {intel?.sources?.length || 0} Documents &bull; {intel?.media?.length || 0} Photos
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {(intel?.sources || []).map((src, idx) => (
+                    <div
+                      key={src.id || idx}
+                      className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all flex flex-col justify-between space-y-2"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="text-xs font-bold text-slate-900 leading-snug">
+                            {src.title || src.document_name}
+                          </h4>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-semibold shrink-0">
+                            {src.source_type || 'PDF Report'}
+                          </span>
+                        </div>
+                        {src.excerpt && (
+                          <p className="text-[11px] text-slate-600 italic line-clamp-2">
+                            "{src.excerpt}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-500">
+                        <span>Provider: {src.provider || 'State PWD'}</span>
+                        {src.document_name && onOpenDocument && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenDocument(src.document_name)}
+                            className="text-green-700 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>Inspect Document</span>
+                            <ArrowUpRight className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Visual Media Gallery Preview */}
+                {(intel?.media || []).length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600 block">
+                      Field Photographic Evidence ({intel.media.length})
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {intel.media.map((m, idx) => (
+                        <div
+                          key={m.id || idx}
+                          onClick={() => setSelectedImage(m)}
+                          className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 hover:border-green-600 cursor-pointer group transition-all"
+                        >
+                          <div className="h-28 overflow-hidden">
+                            <img
+                              src={`http://localhost:8000/api/media/${m.file_name}`}
+                              alt={m.caption}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              onError={(e) => {
+                                e.currentTarget.src = getAssetThumbnail(currentAsset.id);
+                              }}
+                            />
+                          </div>
+                          <div className="p-2 text-[10px] text-slate-700 truncate" title={m.caption}>
+                            {m.caption}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* =========================================================================
+                  SECTION 8: HISTORICAL CONDITION ANALYSIS & AUDIT LEDGER
+                  ========================================================================= */}
+              <section id="section-history" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <History className="w-4 h-4 text-green-700" />
+                      <span>Historical Condition Analysis & Inspection Timeline</span>
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Chronological record of official engineering inspections, repair interventions, and verified sign-offs.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {(intel?.inspections || []).map((insp, idx) => (
+                    <div
+                      key={insp.id || idx}
+                      className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
+                            {insp.inspection_date}
+                          </span>
+                          <span className="font-bold text-slate-900">{insp.inspection_type}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            insp.status === 'Verified' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {insp.status}
+                          </span>
+                        </div>
+                        <p className="text-slate-700 leading-snug">
+                          {insp.findings}
+                        </p>
+                        {insp.actual_action_taken && (
+                          <p className="text-[11px] text-green-800 font-medium">
+                            Action Taken: {insp.actual_action_taken}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="text-right shrink-0 font-mono text-[11px] text-slate-500">
+                        <span>Inspector: {insp.responsible_user || 'Authorized Officer'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* =========================================================================
+                  SECTION 10: ENGINEER REVIEW & VERIFICATION WORKFLOW
+                  ========================================================================= */}
+              <section id="section-verification" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <UserCheck className="w-4 h-4 text-green-700" />
+                      <span>Engineer Review & Verification Workflow</span>
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Audit ledger allowing certified engineers to officially Verify, Reject, or Request Further Inspection on AI and field findings.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {enrichedFindings.map((f) => (
+                    <div
+                      key={f.id}
+                      className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] font-bold text-slate-500">[{f.id}]</span>
+                          <span className="font-bold text-slate-900">{f.title}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            f.verification_status === 'Verified' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {f.verification_status}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 text-[11px] line-clamp-1">{f.plain_explanation}</p>
+                        {f.reviewed_by && (
+                          <p className="text-[10px] text-slate-400 font-mono">
+                            Last reviewed by {f.reviewed_by} on {f.reviewed_at || 'recent audit'}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setReviewingFinding(f)}
+                        className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-green-800 border border-slate-300 text-xs font-semibold shrink-0 cursor-pointer"
+                      >
+                        Review / Sign-off
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* =========================================================================
+                  SECTION 11: ASK AAYAM INTELLIGENCE ASSISTANT (EMBEDDED QUICK-COPILOT)
+                  ========================================================================= */}
+              <section id="section-copilot" className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <Bot className="w-5 h-5 text-green-700" />
+                  <div>
+                    <h2 className="text-base font-black text-slate-900">
+                      Ask AAYAM Intelligence Assistant
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Direct evidence-grounded queries for {currentAsset.name}.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Suggested prompt chips */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    `Why is this ${currentAsset.category?.toLowerCase() || 'asset'} classified as critical?`,
+                    'What are the immediate response requirements?',
+                    'Which official evidence supports the findings?',
+                    'What is the remaining useful life estimate?',
+                  ].map((chip, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleAskCopilot(chip)}
+                      disabled={copilotLoading}
+                      className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-green-50 text-slate-700 hover:text-green-800 text-[11px] border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Conversation Box */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 min-h-[140px] max-h-80 overflow-y-auto space-y-3">
+                  {copilotMessages.length > 0 ? (
+                    copilotMessages.map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-xl text-xs space-y-1.5 ${
+                          msg.sender === 'user'
+                            ? 'bg-green-700 text-white ml-auto max-w-lg'
+                            : 'bg-white text-slate-800 border border-slate-200 max-w-2xl'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[10px] opacity-75 font-mono">
+                          <span>{msg.sender === 'user' ? 'Inquiry' : 'AAYAM Intelligence Assistant'}</span>
+                          <span>{msg.timestamp}</span>
+                        </div>
+                        <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-6 text-slate-400 text-xs">
+                      Type a question above or select a suggested prompt chip to query {currentAsset.name}.
+                    </div>
+                  )}
+                  <div ref={chatBottomRef} />
+                </div>
+
+                {/* Input Bar */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleAskCopilot();
+                  }}
+                  className="flex gap-2"
+                >
+                  <input
+                    type="text"
+                    value={copilotInput}
+                    onChange={(e) => setCopilotInput(e.target.value)}
+                    placeholder={`Ask about ${currentAsset.name} (e.g. 'What is the required rip-rap grading?')...`}
+                    className="flex-1 bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-green-600"
+                    disabled={copilotLoading}
+                  />
+                  <button
+                    type="submit"
+                    disabled={copilotLoading || !copilotInput.trim()}
+                    className="px-5 py-2.5 bg-green-700 hover:bg-green-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
+                  >
+                    {copilotLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    <span>Ask Assistant</span>
+                  </button>
+                </form>
+              </section>
             </>
           )}
         </div>
 
-        {/* Profile Footer */}
-        <div className="p-4 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-600 animate-pulse" />
-            <span>AAYAM Evidence Engine • Zero Hallucination Guarantee</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {onNavigate && (
-              <button
-                onClick={() => {
-                  onClose();
-                  onNavigate('reports');
-                }}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-              >
-                <Printer className="w-3.5 h-3.5 text-slate-500" />
-                <span>Full Audit Report</span>
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-semibold transition-colors cursor-pointer"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Expanded Image Viewer Modal */}
-      {selectedImage && (
-        <div
-          className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4"
-          onClick={() => setSelectedImage(null)}
-        >
-          <div
-            className="bg-white rounded-2xl max-w-3xl w-full overflow-hidden shadow-2xl border border-slate-200 animate-scaleUp"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <span className="text-xs font-bold text-slate-900">{selectedImage.caption}</span>
-              <button
-                onClick={() => setSelectedImage(null)}
-                className="p-1 rounded-lg text-slate-500 hover:text-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="max-h-[60vh] bg-slate-950 flex items-center justify-center p-2">
-              <img
-                src={selectedImage.media_url}
-                alt={selectedImage.caption}
-                className="max-h-[58vh] max-w-full object-contain"
-              />
-            </div>
-            <div className="p-4 bg-white space-y-2 text-xs">
-              <div className="flex items-center justify-between text-slate-600">
-                <span>Category: <strong className="text-slate-800">{selectedImage.category}</strong></span>
-                <span>Verification: <strong className="text-green-700">{selectedImage.verification_status}</strong></span>
-              </div>
-              <div className="flex items-center justify-between text-slate-500 pt-2 border-t border-slate-100">
-                <span>Uploader: {selectedImage.source_uploader}</span>
-                <span>Captured: {selectedImage.capture_date}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Upload Media Modal */}
-      {showUploadModal && (
-        <div
-          className="fixed inset-0 z-60 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setShowUploadModal(false)}
-        >
-          <div
-            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-scaleUp space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Upload className="w-4 h-4 text-green-700" />
-                Upload Infrastructure Photographic Evidence
-              </h3>
-              <button
-                onClick={() => setShowUploadModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {uploadError && (
-              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
-                {uploadError}
-              </div>
-            )}
-
-            <form onSubmit={handleUploadSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Evidence Category
-                </label>
-                <select
-                  value={uploadCategory}
-                  onChange={(e) => setUploadCategory(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
-                >
-                  <option value="Visible Damage">Visible Damage</option>
-                  <option value="Structural Components">Structural Components</option>
-                  <option value="General Infrastructure">General Infrastructure</option>
-                  <option value="Inspection Photographs">Inspection Photographs</option>
-                  <option value="Repairs and Remediation">Repairs and Remediation</option>
-                  <option value="Historical Photographs">Historical Photographs</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Image Caption / Technical Annotation
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={uploadCaption}
-                  onChange={(e) => setUploadCaption(e.target.value)}
-                  placeholder="e.g. Ultrasonic inspection of Pier P-04 scour bed"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Source / Uploader Authority
-                </label>
-                <input
-                  type="text"
-                  value={uploadUploader}
-                  onChange={(e) => setUploadUploader(e.target.value)}
-                  placeholder="e.g. State Highway Inspection Drone Team"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Select Image File (PNG, JPG, SVG, WebP up to 10MB)
-                </label>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 text-slate-800 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        {/* =========================================================================
+            MODAL: ENGINEER REVIEW / SIGN-OFF
+            ========================================================================= */}
+        {reviewingFinding && (
+          <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-base font-bold text-slate-900">
+                  Engineer Review Decision
+                </h3>
                 <button
                   type="button"
-                  onClick={() => setShowUploadModal(false)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer"
+                  onClick={() => setReviewingFinding(null)}
+                  className="text-slate-400 hover:text-slate-700"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploading}
-                  className="px-4 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                  <span>{uploading ? 'Uploading...' : 'Submit Evidence'}</span>
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Add Finding Modal */}
-      {showAddFindingModal && (
-        <div
-          className="fixed inset-0 z-60 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setShowAddFindingModal(false)}
-        >
-          <div
-            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-scaleUp space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-green-700" />
-                Register Engineering Defect Finding
-              </h3>
-              <button
-                onClick={() => setShowAddFindingModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {findingError && (
-              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
-                {findingError}
-              </div>
-            )}
-
-            <form onSubmit={handleAddFindingSubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Finding Title
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={findingTitle}
-                  onChange={(e) => setFindingTitle(e.target.value)}
-                  placeholder="e.g. Elastomer joint gland rupture on Span S-12"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
-                />
+              <div className="p-3 rounded-xl bg-slate-50 text-xs space-y-1">
+                <span className="font-bold text-slate-900 block">{reviewingFinding.title}</span>
+                <span className="text-[11px] text-slate-600 block">{reviewingFinding.affected_component} &bull; {reviewingFinding.severity}</span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3 text-xs">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    Severity
-                  </label>
+                  <label className="font-bold text-slate-700 block mb-1">Decision Outcome</label>
                   <select
-                    value={findingSeverity}
-                    onChange={(e) => setFindingSeverity(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
+                    value={reviewDecision}
+                    onChange={(e) => setReviewDecision(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-900 focus:outline-none focus:border-green-600"
                   >
-                    <option value="Critical">Critical</option>
-                    <option value="High">High</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Low">Low</option>
+                    <option value="Verified">Verified (Certified & Confirmed)</option>
+                    <option value="Requires Further Inspection">Requires Further Inspection (NDT / Dive Survey)</option>
+                    <option value="Rejected">Rejected (Inconclusive / Erroneous)</option>
                   </select>
                 </div>
+
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    Affected Component
-                  </label>
+                  <label className="font-bold text-slate-700 block mb-1">Reviewing Officer</label>
                   <input
                     type="text"
-                    value={findingComponent}
-                    onChange={(e) => setFindingComponent(e.target.value)}
-                    placeholder="e.g. Expansion Joint J-08"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
+                    value={reviewerName}
+                    onChange={(e) => setReviewerName(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-900 focus:outline-none focus:border-green-600"
                   />
                 </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Technical Justification Notes</label>
+                  <textarea
+                    rows={3}
+                    value={reviewNotes}
+                    onChange={(e) => setReviewNotes(e.target.value)}
+                    placeholder="Enter engineering rationale, referenced code standard, and required actions..."
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-900 focus:outline-none focus:border-green-600"
+                  />
+                </div>
+
+                {reviewError && (
+                  <p className="text-red-700 text-xs font-mono">{reviewError}</p>
+                )}
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Plain-Language Explanation
-                </label>
-                <textarea
-                  required
-                  rows={2}
-                  value={findingPlain}
-                  onChange={(e) => setFindingPlain(e.target.value)}
-                  placeholder="Explain the problem in terms an ordinary user or auditor can understand..."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Technical Explanation (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={findingTechnical}
-                  onChange={(e) => setFindingTechnical(e.target.value)}
-                  placeholder="Engineering standards, formulas, measurements, or code references..."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Recommended Engineering Intervention
-                </label>
-                <input
-                  type="text"
-                  value={findingRecommendation}
-                  onChange={(e) => setFindingRecommendation(e.target.value)}
-                  placeholder="e.g. Reseal joint gland and install drainage deflection shield"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-green-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddFindingModal(false)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer"
+                  onClick={() => setReviewingFinding(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  disabled={submittingFinding}
-                  className="px-4 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                  type="button"
+                  onClick={handleSubmitReview}
+                  disabled={submittingReview}
+                  className="px-4 py-2 rounded-xl bg-green-700 text-white text-xs font-semibold hover:bg-green-800 disabled:opacity-50 cursor-pointer"
                 >
-                  {submittingFinding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
-                  <span>{submittingFinding ? 'Saving...' : 'Register Finding'}</span>
+                  {submittingReview ? 'Recording...' : 'Certify Decision'}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* =========================================================================
+            MODAL: IMAGE VIEWER
+            ========================================================================= */}
+        {selectedImage && (
+          <div
+            className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
+            onClick={() => setSelectedImage(null)}
+          >
+            <div className="bg-white rounded-2xl max-w-3xl w-full p-4 space-y-3 cursor-default" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-slate-900 truncate">{selectedImage.caption}</h4>
+                <button type="button" onClick={() => setSelectedImage(null)} className="text-slate-400 hover:text-slate-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="max-h-[70vh] overflow-hidden rounded-xl bg-slate-100 flex items-center justify-center">
+                <img
+                  src={`http://localhost:8000/api/media/${selectedImage.file_name}`}
+                  alt={selectedImage.caption}
+                  className="max-h-[70vh] w-auto object-contain"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

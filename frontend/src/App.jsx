@@ -53,6 +53,20 @@ export function DashboardView({ isDemo = false, onExitDemo }) {
     setIsViewerOpen(true);
   };
 
+  // Support opening profile directly via URL query param e.g. ?profile=ASSET-BRG-001
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const profId = params.get('profile');
+      if (profId) {
+        setProfileAssetId(profId);
+        setIsProfileOpen(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Close mobile drawer on Escape key press
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -358,8 +372,11 @@ export function DashboardView({ isDemo = false, onExitDemo }) {
           {currentRoute === 'copilot' && (
             <CopilotPlaceholder
               assets={assets}
+              selectedAsset={selectedAsset}
+              onSelectAsset={(asset) => setSelectedAsset(asset)}
               onNavigate={(route) => setCurrentRoute(route)}
               onOpenProfile={(id) => handleOpenProfile(id)}
+              onOpenDocument={handleOpenDocument}
               isDemo={isDemo}
             />
           )}

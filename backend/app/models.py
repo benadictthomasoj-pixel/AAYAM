@@ -81,6 +81,7 @@ class Asset(Base):
     media = relationship("AssetMedia", back_populates="asset", cascade="all, delete-orphan", order_by="desc(AssetMedia.created_at)")
     sources = relationship("EvidenceSource", back_populates="asset", cascade="all, delete-orphan", order_by="desc(EvidenceSource.created_at)")
     findings = relationship("AssetFinding", back_populates="asset", cascade="all, delete-orphan", order_by="desc(AssetFinding.created_at)")
+    intelligence_runs = relationship("AIIntelligenceRun", back_populates="asset", cascade="all, delete-orphan", order_by="desc(AIIntelligenceRun.created_at)")
 
     @property
     def flagged_reasons_list(self) -> List[str]:
@@ -240,6 +241,7 @@ class AssetFinding(Base):
     """
     SQLAlchemy model representing individual, structured engineering findings and recommendations.
     Provides plain-language summary, technical detail, supporting evidence, and resolution status.
+    Now extended with 5-module intelligence categories, evidence classifications, and engineer reviews.
     """
     __tablename__ = "asset_findings"
 
@@ -252,15 +254,42 @@ class AssetFinding(Base):
     affected_component = Column(String(150), nullable=False) # e.g. "Pier 4 Footing", "Flap Gate Hinge"
     supporting_evidence = Column(String(255), nullable=True) # Link to evidence source or document
     date_identified = Column(String(30), nullable=False)
-    verification_status = Column(String(50), nullable=False, default="Verified by Field Audit")
+    verification_status = Column(String(50), nullable=False, default="Pending Review") # Pending Review, Verified, Rejected, Requires Further Inspection
     recommended_action = Column(Text, nullable=False)
     resolution_status = Column(String(50), nullable=False, default="Open") # "Open", "Intervention Underway", "Resolved & Certified"
+
+    # Extended Intelligence & Evidence Provenance Attributes
+    intelligence_category = Column(String(50), nullable=False, default="Structural", index=True) # Structural, Environmental, Compliance, Operational, Predictive
+    evidence_classification = Column(String(50), nullable=False, default="Documented") # Documented, Visually Suspected, Inferred, Unknown
+    confidence_level = Column(String(20), nullable=False, default="High") # High, Medium, Low
+    source_document = Column(String(255), nullable=True)
+    page_number = Column(Integer, nullable=True)
+    image_reference = Column(String(255), nullable=True)
+    reviewed_by = Column(String(100), nullable=True)
+    reviewed_at = Column(String(50), nullable=True)
+    review_decision_notes = Column(Text, nullable=True)
+    ai_generated = Column(Boolean, nullable=False, default=False)
+    run_id = Column(String(64), ForeignKey("ai_intelligence_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # 10-Point Critical Infrastructure Area Attributes
+    exact_location = Column(String(200), nullable=True)
+    severity_level = Column(Integer, nullable=True, default=3)
+    potential_consequences = Column(Text, nullable=True)
+    immediate_action = Column(Text, nullable=True)
+    further_investigation = Column(Text, nullable=True)
+    responsible_discipline = Column(String(150), nullable=True)
+    action_stage = Column(String(30), nullable=True, default="Stage A")
+    timeframe = Column(String(50), nullable=True)
+    approval_required = Column(String(150), nullable=True)
+    risk_contribution_pts = Column(Float, nullable=True, default=0.0)
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     asset = relationship("Asset", back_populates="findings")
+    intelligence_run = relationship("AIIntelligenceRun", back_populates="findings")
 
     def to_dict(self):
-        return {
+        raw = {
             "id": self.id,
             "asset_id": self.asset_id,
             "title": self.title,
@@ -273,8 +302,128 @@ class AssetFinding(Base):
             "verification_status": self.verification_status,
             "recommended_action": self.recommended_action,
             "resolution_status": self.resolution_status,
+            "intelligence_category": self.intelligence_category or "Structural",
+            "evidence_classification": self.evidence_classification or "Documented",
+            "confidence_level": self.confidence_level or "High",
+            "source_document": self.source_document,
+            "page_number": self.page_number,
+            "image_reference": self.image_reference,
+            "reviewed_by": self.reviewed_by,
+            "reviewed_at": self.reviewed_at,
+            "review_decision_notes": self.review_decision_notes,
+            "ai_generated": bool(self.ai_generated),
+            "run_id": self.run_id,
+            "exact_location": self.exact_location,
+            "severity_level": self.severity_level,
+            "potential_consequences": self.potential_consequences,
+            "immediate_action": self.immediate_action,
+            "further_investigation": self.further_investigation,
+            "responsible_discipline": self.responsible_discipline,
+            "action_stage": self.action_stage or "Stage A",
+            "timeframe": self.timeframe,
+            "approval_required": self.approval_required,
+            "risk_contribution_pts": self.risk_contribution_pts or 0.0,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+        try:
+            from app.component_intelligence import enrich_finding_details
+            asset_cat = self.asset.category if self.asset else ""
+            return enrich_finding_details(raw, asset_category=asset_cat)
+        except Exception:
+            return raw
+
+
+class AIIntelligenceRun(Base):
+    """
+    SQLAlchemy model representing an AI intelligence analysis execution for an asset.
+    Tracks model, tokens, estimated cost, and summaries across the 5 intelligence modules.
+    """
+    __tablename__ = "ai_intelligence_runs"
+
+    id = Column(String(64), primary_key=True, index=True)
+    asset_id = Column(String(64), ForeignKey("assets.id"), nullable=False, index=True)
+    model_used = Column(String(100), nullable=False, default="gpt-4o-mini")
+    status = Column(String(50), nullable=False, default="completed") # completed, degraded_fallback, failed
+    overall_condition_summary = Column(Text, nullable=True)
+    structural_summary = Column(Text, nullable=True)
+    environmental_summary = Column(Text, nullable=True)
+    compliance_summary = Column(Text, nullable=True)
+    operational_summary = Column(Text, nullable=True)
+    predictive_summary = Column(Text, nullable=True)
+    predictive_data_warning = Column(Text, nullable=True)
+    data_limitations = Column(Text, nullable=True)
+    conflicting_evidence = Column(Text, nullable=True)
+    prompt_tokens = Column(Integer, nullable=False, default=0)
+    completion_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    estimated_cost_usd = Column(Float, nullable=False, default=0.0)
+    latency_ms = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    asset = relationship("Asset", back_populates="intelligence_runs")
+    findings = relationship("AssetFinding", back_populates="intelligence_run")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "asset_id": self.asset_id,
+            "model_used": self.model_used,
+            "status": self.status,
+            "overall_condition_summary": self.overall_condition_summary,
+            "structural_summary": self.structural_summary,
+            "environmental_summary": self.environmental_summary,
+            "compliance_summary": self.compliance_summary,
+            "operational_summary": self.operational_summary,
+            "predictive_summary": self.predictive_summary,
+            "predictive_data_warning": self.predictive_data_warning,
+            "data_limitations": self.data_limitations,
+            "conflicting_evidence": self.conflicting_evidence,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "estimated_cost_usd": self.estimated_cost_usd,
+            "latency_ms": self.latency_ms,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AIConversationMessage(Base):
+    """
+    SQLAlchemy model representing chat history with the asset-aware intelligence copilot.
+    """
+    __tablename__ = "ai_conversation_messages"
+
+    id = Column(String(64), primary_key=True, index=True)
+    asset_id = Column(String(64), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    citations_json = Column(Text, nullable=True)
+    evidence_json = Column(Text, nullable=True)
+    model_used = Column(String(100), nullable=False, default="gpt-4o-mini")
+    pipeline_type = Column(String(50), nullable=False, default="openai_grounded_rag")
+    tokens_used = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    asset = relationship("Asset")
+    user = relationship("User")
+
+    def to_dict(self):
+        import json
+        return {
+            "id": self.id,
+            "asset_id": self.asset_id,
+            "user_id": self.user_id,
+            "question": self.question,
+            "answer": self.answer,
+            "citations": json.loads(self.citations_json) if self.citations_json else [],
+            "evidence": json.loads(self.evidence_json) if self.evidence_json else [],
+            "model_used": self.model_used,
+            "pipeline_type": self.pipeline_type,
+            "tokens_used": self.tokens_used,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
 
 
 class User(Base):

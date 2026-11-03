@@ -25,6 +25,13 @@ import {
   DEMO_SOURCES,
   DEMO_FINDINGS,
 } from './demoData';
+import {
+  enrichFinding,
+  buildComponentInventory,
+  build3StageInterventionPlan,
+  buildPrioritizedRiskTable,
+  computeWholeAssetSummary,
+} from '../utils/componentIntelligence';
 
 /**
  * Custom error thrown when any state mutation is attempted while in Demo Mode.
@@ -640,11 +647,18 @@ export async function getDemoAssetIntelligence(assetId) {
     data_confidence_score: 0.95,
   };
 
-  const findings = DEMO_FINDINGS.filter((f) => f.asset_id === assetId);
+  const rawFindings = DEMO_FINDINGS.filter((f) => f.asset_id === assetId);
+  const findings = rawFindings.map((f) => enrichFinding(f, asset.category));
   const sources = DEMO_SOURCES.filter((s) => s.asset_id === assetId);
   const media = DEMO_MEDIA.filter((m) => m.asset_id === assetId);
   const inspections = (DEMO_INSPECTIONS[assetId] || []);
   const timeline = (DEMO_TIMELINES[assetId] || []);
+
+  const componentInventory = buildComponentInventory(asset, findings, inspections, media);
+  const interventionPlan = build3StageInterventionPlan(asset, findings);
+  const prioritizedRisks = buildPrioritizedRiskTable(findings);
+  const criticalAreas = findings.filter((f) => f.severity_level === 1 || f.severity_level === 2);
+  const conditionSummary = computeWholeAssetSummary(asset, heartbeat, findings, componentInventory, inspections);
 
   return clone({
     asset,
@@ -660,6 +674,11 @@ export async function getDemoAssetIntelligence(assetId) {
     media,
     inspections,
     timeline,
+    critical_areas: criticalAreas.length > 0 ? criticalAreas : findings.slice(0, 2),
+    intervention_plan: interventionPlan,
+    prioritized_risks: prioritizedRisks,
+    component_inventory: componentInventory,
+    condition_summary: conditionSummary,
     meta: {
       generated_at: new Date().toISOString(),
       disclaimer: DEMO_DISCLAIMER,
@@ -740,4 +759,58 @@ export async function getDemoAssetReport(assetId) {
     disclaimer: DEMO_DISCLAIMER,
   });
 }
+
+/**
+ * Simulated AI intelligence run for demo mode
+ */
+export async function runDemoAssetIntelligence(assetId) {
+  const intel = await getDemoAssetIntelligence(assetId);
+  return clone({
+    id: `RUN-DEMO-${assetId}-${Date.now().toString(36).toUpperCase()}`,
+    asset_id: assetId,
+    model_used: 'gpt-4o-mini',
+    status: 'completed',
+    overall_condition_summary: `AI Intelligence Assessment for ${intel.asset.name}. Risk Score: ${intel.asset.risk_score}/100, Health Index: ${intel.asset.health_index}%.`,
+    structural_summary: `Structural analysis detects physical load fatigue and concrete micro-fissures matching field inspection observations.`,
+    environmental_summary: `High exposure to regional monsoon precipitation and environmental degradation factors in ${intel.asset.district}.`,
+    compliance_summary: `Statutory inspections logged according to PWD/IRC compliance matrix. 0 overdue safety audits.`,
+    operational_summary: `Continuous civic usage under state operational demand. No active mechanical shutdowns.`,
+    predictive_summary: `Deterioration rate estimated at 1.4% annually under normal weather. Recommend scheduled preventive remediation within 90 days.`,
+    data_limitations: 'Simulated demo evaluation grounded in demo asset records.',
+    conflicting_evidence: null,
+    prompt_tokens: 1420,
+    completion_tokens: 380,
+    total_tokens: 1800,
+    estimated_cost_usd: 0.000441,
+    latency_ms: 1240,
+    created_at: new Date().toISOString(),
+  });
+}
+
+/**
+ * Simulated engineer review decision in demo mode
+ */
+export async function reviewDemoAssetFinding(findingId, reviewData) {
+  const status = reviewData.verification_status || reviewData.decision || 'Verified';
+  const reviewer = reviewData.reviewed_by || reviewData.reviewer_name || 'Demo Reviewing Engineer';
+  const notes = reviewData.review_decision_notes || reviewData.decision_notes || '';
+  const finding = DEMO_FINDINGS.find((f) => f.id === findingId);
+  if (finding) {
+    finding.verification_status = status;
+    finding.reviewed_by = reviewer;
+    finding.reviewed_at = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+    if (notes) {
+      finding.review_decision_notes = notes;
+    }
+    return clone(finding);
+  }
+  return {
+    id: findingId,
+    verification_status: status,
+    reviewed_by: reviewer,
+    reviewed_at: new Date().toISOString(),
+    review_decision_notes: notes,
+  };
+}
+
 

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -65,10 +65,22 @@ class AssetSummaryStats(BaseModel):
     average_health_index: float
 
 
+class ExternalWebSource(BaseModel):
+    title: str
+    url: str
+    domain: str
+    snippet: str
+    published_date: Optional[str] = None
+    accessed_date: str = ""
+    authority_tier: str = "Official Reference"
+    supports_topic: str = "Infrastructure Guidance"
+
+
 class CopilotAskRequest(BaseModel):
     question: str = Field(..., description="Infrastructure inquiry question to be grounded in asset records")
     asset_id: Optional[str] = Field(None, description="Optional target asset ID to scope the inquiry")
     category: Optional[str] = Field(None, description="Optional asset category filter")
+    conversation_history: Optional[List[Dict[str, str]]] = Field(default=None, description="Prior conversational context turns")
 
 
 class EvidenceItem(BaseModel):
@@ -127,6 +139,12 @@ class CopilotAskResponse(BaseModel):
     confidence_level: str = "High"
     limitations_note: str
     pipeline_type: str = "retrieval_only_fallback" # "llm_grounded_rag" or "retrieval_only_fallback"
+    external_sources: List[ExternalWebSource] = []
+    search_executed: bool = False
+    search_query_used: Optional[str] = None
+    search_provider: Optional[str] = None
+    simple_answer: Optional[str] = None
+    final_summary: Optional[str] = None
 
 
 class ContributingFactor(BaseModel):
@@ -315,7 +333,28 @@ class AssetFindingResponse(BaseModel):
     verification_status: str
     recommended_action: str
     resolution_status: str
+    intelligence_category: str = "Structural"
+    evidence_classification: str = "Documented"
+    confidence_level: str = "High"
+    source_document: Optional[str] = None
+    page_number: Optional[int] = None
+    image_reference: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    review_decision_notes: Optional[str] = None
+    ai_generated: bool = False
+    run_id: Optional[str] = None
     created_at: Optional[str] = None
+    exact_location: Optional[str] = None
+    severity_level: Optional[int] = 3
+    potential_consequences: Optional[str] = None
+    immediate_action: Optional[str] = None
+    further_investigation: Optional[str] = None
+    responsible_discipline: Optional[str] = None
+    action_stage: Optional[str] = "Stage A"
+    timeframe: Optional[str] = None
+    approval_required: Optional[str] = None
+    risk_contribution_pts: Optional[float] = 0.0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -328,9 +367,46 @@ class AssetFindingCreateRequest(BaseModel):
     affected_component: str = Field(..., description="Infrastructure component e.g. Pier Footing, Spillway Gate")
     supporting_evidence: Optional[str] = Field(None, description="Citation or document filename")
     date_identified: str = Field(..., description="Date identified in YYYY-MM-DD")
-    verification_status: str = Field("Verified by Field Audit", description="Verification state")
+    verification_status: str = Field("Pending Review", description="Verification state: Pending Review, Verified, Rejected, Requires Further Inspection")
     recommended_action: str = Field(..., description="Recommended engineering intervention")
     resolution_status: str = Field("Open", description="Status: Open, Intervention Underway, Resolved & Certified")
+    intelligence_category: Optional[str] = Field("Structural", description="One of: Structural, Environmental, Compliance, Operational, Predictive")
+    evidence_classification: Optional[str] = Field("Documented", description="One of: Documented, Visually Suspected, Inferred, Unknown")
+    confidence_level: Optional[str] = Field("High", description="High, Medium, Low")
+    source_document: Optional[str] = Field(None, description="Document filename")
+    page_number: Optional[int] = Field(None, description="Page number")
+    image_reference: Optional[str] = Field(None, description="Image reference filename")
+
+
+class FindingReviewRequest(BaseModel):
+    verification_status: str = Field(..., description="Allowed: 'Pending Review', 'Verified', 'Rejected', 'Requires Further Inspection'")
+    review_decision_notes: Optional[str] = Field(None, description="Review notes or justification from reviewing engineer")
+    reviewed_by: Optional[str] = Field("Authorized Engineering Officer", description="Reviewer name or role")
+
+
+class AIIntelligenceRunResponse(BaseModel):
+    id: str
+    asset_id: str
+    model_used: str
+    status: str
+    overall_condition_summary: Optional[str] = None
+    structural_summary: Optional[str] = None
+    environmental_summary: Optional[str] = None
+    compliance_summary: Optional[str] = None
+    operational_summary: Optional[str] = None
+    predictive_summary: Optional[str] = None
+    predictive_data_warning: Optional[str] = None
+    data_limitations: Optional[str] = None
+    conflicting_evidence: Optional[str] = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    latency_ms: int = 0
+    created_at: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 
 class GlobalSearchResultItem(BaseModel):
@@ -372,6 +448,14 @@ class AssetIntelligenceResponse(BaseModel):
     media: List[AssetMediaResponse] = []
     timeline: List[TimelineEvent] = []
     inspections: List[InspectionResponse] = []
+    latest_ai_run: Optional[AIIntelligenceRunResponse] = None
+    ai_runs_count: int = 0
+    critical_areas: List[Dict[str, Any]] = []
+    intervention_plan: Dict[str, Any] = {}
+    prioritized_risks: List[Dict[str, Any]] = []
+    component_inventory: List[Dict[str, Any]] = []
+    condition_summary: Dict[str, Any] = {}
+
 
 
 class AssetReportSection(BaseModel):

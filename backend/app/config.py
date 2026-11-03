@@ -11,7 +11,7 @@ def load_app_env():
     if env_file.exists():
         load_dotenv(env_file, override=True)
     # Clear out any placeholder keys like 'your_gemini_api_key_here'
-    for k in ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]:
+    for k in ["OPENROUTER_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]:
         val = os.getenv(k)
         if val and (val.startswith("your_") or val == "your_api_key_here" or not val.strip()):
             os.environ.pop(k, None)

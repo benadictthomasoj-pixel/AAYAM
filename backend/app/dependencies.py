@@ -67,6 +67,29 @@ def get_current_user(
     return user
 
 
+def get_current_user_optional(
+    auth: Optional[HTTPAuthorizationCredentials] = Depends(http_bearer),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """
+    Optional user dependency. If a valid Bearer token is provided, returns the User object.
+    Otherwise returns None without raising 401, supporting open prototype exploration.
+    """
+    if not auth or not auth.credentials:
+        return None
+    try:
+        payload = decode_access_token(auth.credentials)
+        username = payload.get("sub") or payload.get("username")
+        if not username:
+            return None
+        user = db.query(User).filter(User.username == username).first()
+        if user and user.is_active:
+            return user
+    except Exception:
+        pass
+    return None
+
+
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """
     FastAPI dependency that enforces administrative role on top of an authenticated active user.

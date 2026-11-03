@@ -52,6 +52,7 @@ export default {
     datasetMode: 'Dataset Mode',
     demoSpecimen: 'Demo Specimen',
     syntheticMock: 'Synthetic Mock',
+    liveSqliteDb: 'Live SQLite DB',
     apiDocs: 'API Docs',
     swagger: 'Swagger',
   },

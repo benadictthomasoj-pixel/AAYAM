@@ -9,7 +9,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, status, UploadFile, 
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 from app.config import APP_NAME, ENV, CORS_ORIGINS
 from app.database import get_db, Base, engine
@@ -20,6 +20,8 @@ from app.models import (
     AssetMedia,
     EvidenceSource,
     AssetFinding,
+    AIIntelligenceRun,
+    AIConversationMessage,
     parse_flagged_reasons,
     serialize_flagged_reasons,
 )
@@ -48,6 +50,8 @@ from app.schemas import (
     EvidenceSourceResponse,
     AssetFindingResponse,
     AssetFindingCreateRequest,
+    FindingReviewRequest,
+    AIIntelligenceRunResponse,
     GlobalSearchResponse,
     GlobalSearchResultItem,
     AssetIntelligenceResponse,
@@ -56,8 +60,9 @@ from app.schemas import (
     AssetReportSection,
 )
 from app.security import verify_password, create_access_token, hash_password
-from app.dependencies import get_current_user, require_admin
+from app.dependencies import get_current_user, require_admin, get_current_user_optional
 from app.document_store import evidence_store
+from app.ai_service import ai_service
 from app.copilot_service import query_copilot_evidence, query_copilot_evidence_async
 from app.heartbeat_engine import calculate_digital_heartbeat, determine_asset_status
 from app.database import ensure_schema_compatibility, engine
@@ -483,7 +488,11 @@ def get_asset_by_id(asset_id: str, db: Session = Depends(get_db)):
     tags=["Copilot"],
     summary="Query AI Decision Copilot grounded in infrastructure evidence",
 )
-async def ask_copilot(payload: CopilotAskRequest, db: Session = Depends(get_db)):
+async def ask_copilot(
+    payload: CopilotAskRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """
     Submits an inquiry to the AI Decision Copilot.
     Validates the question, searches existing SQLite asset records,
@@ -497,12 +506,34 @@ async def ask_copilot(payload: CopilotAskRequest, db: Session = Depends(get_db))
             detail="Question cannot be empty. Please enter an infrastructure asset inquiry.",
         )
 
-    return await query_copilot_evidence_async(
+    res = await query_copilot_evidence_async(
         db,
         payload.question,
         asset_id_filter=payload.asset_id,
         category_filter=payload.category,
+        conversation_history=payload.conversation_history,
     )
+
+    try:
+        conv_msg = AIConversationMessage(
+            id=f"MSG-{uuid.uuid4().hex[:10].upper()}",
+            asset_id=payload.asset_id,
+            user_id=current_user.id if current_user else None,
+            question=payload.question,
+            answer=res.answer,
+            citations_json=json.dumps(res.citations),
+            evidence_json=json.dumps([e.model_dump() for e in res.evidence]),
+            model_used=ai_service.model if ai_service.is_configured() else "retrieval_fallback",
+            pipeline_type=res.pipeline_type,
+            tokens_used=0,
+        )
+        db.add(conv_msg)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Could not record conversation turn: {e}")
+
+    return res
+
 
 
 @app.get(
@@ -1197,24 +1228,7 @@ def get_asset_findings(asset_id: str, db: Session = Depends(get_db)):
         .order_by(AssetFinding.created_at.desc())
         .all()
     )
-    return [
-        AssetFindingResponse(
-            id=f.id,
-            asset_id=f.asset_id,
-            title=f.title,
-            plain_explanation=f.plain_explanation,
-            technical_explanation=f.technical_explanation,
-            severity=f.severity,
-            affected_component=f.affected_component,
-            supporting_evidence=f.supporting_evidence,
-            date_identified=f.date_identified,
-            verification_status=f.verification_status,
-            recommended_action=f.recommended_action,
-            resolution_status=f.resolution_status,
-            created_at=f.created_at.isoformat() if f.created_at else None,
-        )
-        for f in findings
-    ]
+    return [AssetFindingResponse(**f.to_dict()) for f in findings]
 
 
 @app.post(
@@ -1248,26 +1262,18 @@ def create_asset_finding(
         verification_status=payload.verification_status,
         recommended_action=payload.recommended_action.strip(),
         resolution_status=payload.resolution_status,
+        intelligence_category=payload.intelligence_category or "Structural",
+        evidence_classification=payload.evidence_classification or "Documented",
+        confidence_level=payload.confidence_level or "High",
+        source_document=payload.source_document,
+        page_number=payload.page_number,
+        image_reference=payload.image_reference,
     )
     db.add(finding)
     db.commit()
     db.refresh(finding)
 
-    return AssetFindingResponse(
-        id=finding.id,
-        asset_id=finding.asset_id,
-        title=finding.title,
-        plain_explanation=finding.plain_explanation,
-        technical_explanation=finding.technical_explanation,
-        severity=finding.severity,
-        affected_component=finding.affected_component,
-        supporting_evidence=finding.supporting_evidence,
-        date_identified=finding.date_identified,
-        verification_status=finding.verification_status,
-        recommended_action=finding.recommended_action,
-        resolution_status=finding.resolution_status,
-        created_at=finding.created_at.isoformat() if finding.created_at else None,
-    )
+    return AssetFindingResponse(**finding.to_dict())
 
 
 # ==============================================================================
@@ -1336,16 +1342,437 @@ def get_asset_intelligence(asset_id: str, db: Session = Depends(get_db)):
         has_findings=len(findings_db) > 0,
     )
 
+    # Query AI intelligence runs history for this asset
+    ai_runs_db = (
+        db.query(AIIntelligenceRun)
+        .filter(AIIntelligenceRun.asset_id == asset_id)
+        .order_by(AIIntelligenceRun.created_at.desc())
+        .all()
+    )
+    latest_run_obj = ai_runs_db[0] if ai_runs_db else None
+
+    # Generate Component Analysis, Critical Areas, 3-Stage Intervention Plan & Risk Prioritization
+    from app.component_intelligence import (
+        analyze_component_inventory,
+        generate_3stage_intervention_plan,
+        generate_prioritized_risk_table,
+        calculate_whole_asset_summary,
+    )
+
+    enriched_findings_dicts = [f.to_dict() for f in findings_db]
+    inspections_dicts = [i.to_dict() for i in inspections_db]
+    media_dicts = [m.to_dict() for m in media_db]
+
+    component_inventory = analyze_component_inventory(asset, enriched_findings_dicts, inspections_dicts, media_dicts)
+    intervention_plan = generate_3stage_intervention_plan(asset, enriched_findings_dicts, inspections_dicts)
+    prioritized_risks = generate_prioritized_risk_table(enriched_findings_dicts)
+    critical_areas = [f for f in enriched_findings_dicts if f.get("severity_level") in (1, 2)]
+    if not critical_areas and enriched_findings_dicts:
+        critical_areas = enriched_findings_dicts[:2]
+    condition_summary = calculate_whole_asset_summary(asset, heartbeat_resp, enriched_findings_dicts, component_inventory, inspections_db)
+
     return AssetIntelligenceResponse(
         asset=AssetResponse(**asset.to_dict()),
         completeness=completeness,
         heartbeat=heartbeat_resp,
-        findings=[AssetFindingResponse(**f.to_dict()) for f in findings_db],
+        findings=[AssetFindingResponse(**f_dict) for f_dict in enriched_findings_dicts],
         sources=[EvidenceSourceResponse(**s.to_dict()) for s in sources_db],
         media=[AssetMediaResponse(**m.to_dict()) for m in media_db],
         timeline=timeline_events,
         inspections=[InspectionResponse(**i.to_dict()) for i in inspections_db],
+        latest_ai_run=AIIntelligenceRunResponse(**latest_run_obj.to_dict()) if latest_run_obj else None,
+        ai_runs_count=len(ai_runs_db),
+        critical_areas=critical_areas,
+        intervention_plan=intervention_plan,
+        prioritized_risks=prioritized_risks,
+        component_inventory=component_inventory,
+        condition_summary=condition_summary,
     )
+
+
+# ==============================================================================
+# CLOUD AI CENTRAL INTELLIGENCE ENGINE ENDPOINTS (OPENAI POWERED)
+# ==============================================================================
+
+@app.get(
+    "/api/ai/status",
+    tags=["Intelligence"],
+    summary="Get Cloud AI status, connectivity, active model, and token telemetry",
+)
+def get_ai_status(db: Session = Depends(get_db)):
+    """
+    Returns live connectivity status of the Central Cloud AI layer (OpenRouter / OpenAI).
+    Distinguishes configured, ready, connected, quota_exceeded, degraded_fallback, and unconfigured.
+    """
+    runs_count = db.query(AIIntelligenceRun).count()
+    total_tokens = db.query(func.sum(AIIntelligenceRun.total_tokens)).scalar() or 0
+    total_cost = db.query(func.sum(AIIntelligenceRun.estimated_cost_usd)).scalar() or 0.0
+    latest_run = db.query(AIIntelligenceRun).order_by(AIIntelligenceRun.created_at.desc()).first()
+
+    is_cfg = ai_service.is_configured()
+    status_label = "unconfigured"
+    if is_cfg:
+        if latest_run and "quota" in (latest_run.status or ""):
+            status_label = "quota_exceeded"
+        elif latest_run and "completed" in (latest_run.status or ""):
+            status_label = "ready"
+        elif latest_run and "fallback" in (latest_run.status or ""):
+            status_label = latest_run.status
+        else:
+            status_label = "ready"
+
+    return {
+        "configured": is_cfg,
+        "provider": getattr(ai_service, "provider", "openrouter"),
+        "model": ai_service.model if is_cfg else "none",
+        "status": status_label,
+        "last_run_status": latest_run.status if latest_run else None,
+        "total_runs": runs_count,
+        "total_tokens": int(total_tokens),
+        "total_cost_usd": round(float(total_cost), 4),
+        "latest_run_id": latest_run.id if latest_run else None,
+        "latest_run_time": latest_run.created_at.isoformat() if latest_run else None,
+    }
+
+
+@app.get(
+    "/api/ai/test-connection",
+    tags=["Intelligence"],
+    summary="Execute a minimal authenticated ping to verify live OpenRouter connectivity",
+)
+def test_cloud_ai_connection(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Tests live API connectivity to OpenRouter/OpenAI without logging or exposing secrets.
+    Requires authenticated user credentials.
+    """
+    return ai_service.test_live_connectivity()
+
+
+@app.post(
+    "/api/assets/{asset_id}/intelligence/run",
+    response_model=AIIntelligenceRunResponse,
+    tags=["Intelligence"],
+    summary="Run AI intelligence analysis across the 5 modules with OpenAI",
+)
+def run_asset_intelligence_analysis(
+    asset_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Executes unified 5-module intelligence analysis using OpenAI:
+    1. Structural Intelligence: Cracks, corrosion, scouring, deformation, material wear.
+    2. Environmental Intelligence: Hydrology, monsoon floods, salinity, soil slope creep.
+    3. Compliance Intelligence: Statutory codes (IRC/CPWD/CWC/IS), overdue audit cadence.
+    4. Operational Intelligence: Traffic load, operational strain, mechanical reliability.
+    5. Predictive Intelligence: Deterioration trend comparison, early intervention flags.
+    Saves the structured run and findings into SQLite and returns the complete result.
+    Requires authenticated user credentials.
+    """
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found.")
+
+    inspections_db = (
+        db.query(Inspection)
+        .filter(Inspection.asset_id == asset_id)
+        .order_by(Inspection.inspection_date.desc())
+        .all()
+    )
+    media_db = db.query(AssetMedia).filter(AssetMedia.asset_id == asset_id).all()
+    sources_db = db.query(EvidenceSource).filter(EvidenceSource.asset_id == asset_id).all()
+    existing_findings_db = db.query(AssetFinding).filter(AssetFinding.asset_id == asset_id).all()
+
+    payload, run_status, p_tok, c_tok, t_tok, cost_usd, latency = ai_service.run_asset_intelligence(
+        asset, inspections_db, media_db, sources_db, existing_findings_db
+    )
+
+    run_id = f"RUN-{asset_id}-{uuid.uuid4().hex[:8].upper()}"
+    ai_run = AIIntelligenceRun(
+        id=run_id,
+        asset_id=asset_id,
+        model_used=ai_service.model,
+        status=run_status,
+        overall_condition_summary=payload.overall_condition_summary,
+        structural_summary=payload.structural_summary,
+        environmental_summary=payload.environmental_summary,
+        compliance_summary=payload.compliance_summary,
+        operational_summary=payload.operational_summary,
+        predictive_summary=payload.predictive_summary,
+        predictive_data_warning=payload.predictive_data_warning,
+        data_limitations=payload.data_limitations,
+        conflicting_evidence=payload.conflicting_evidence,
+        prompt_tokens=p_tok,
+        completion_tokens=c_tok,
+        total_tokens=t_tok,
+        estimated_cost_usd=cost_usd,
+        latency_ms=latency,
+    )
+    db.add(ai_run)
+    db.flush()
+
+    # Save findings generated by the analysis run with "Pending Review" status
+    for f_item in payload.findings:
+        f_id = f"FND-AI-{asset_id}-{uuid.uuid4().hex[:6].upper()}"
+        new_finding = AssetFinding(
+            id=f_id,
+            asset_id=asset_id,
+            title=f_item.title,
+            plain_explanation=f_item.plain_explanation,
+            technical_explanation=f_item.technical_explanation,
+            severity=f_item.severity,
+            affected_component=f_item.affected_component,
+            supporting_evidence=f_item.source_document or (sources_db[0].title if sources_db else "AAYAM Evidence Engine"),
+            date_identified=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            verification_status="Pending Review",
+            recommended_action=f_item.recommended_action,
+            resolution_status="Open",
+            intelligence_category=f_item.intelligence_category,
+            evidence_classification=f_item.evidence_classification,
+            confidence_level=f_item.confidence_level,
+            source_document=f_item.source_document,
+            page_number=f_item.page_number,
+            image_reference=f_item.image_reference,
+            ai_generated=True,
+            run_id=run_id,
+        )
+        db.add(new_finding)
+
+    db.commit()
+    db.refresh(ai_run)
+    return AIIntelligenceRunResponse(**ai_run.to_dict())
+
+
+@app.get(
+    "/api/assets/{asset_id}/intelligence/latest",
+    response_model=AIIntelligenceRunResponse,
+    tags=["Intelligence"],
+    summary="Get the latest AI intelligence run for this asset",
+)
+def get_latest_asset_intelligence_run(asset_id: str, db: Session = Depends(get_db)):
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found.")
+
+    latest_run = (
+        db.query(AIIntelligenceRun)
+        .filter(AIIntelligenceRun.asset_id == asset_id)
+        .order_by(AIIntelligenceRun.created_at.desc())
+        .first()
+    )
+    if not latest_run:
+        # Generate initial run on demand for read-only viewing
+        inspections_db = (
+            db.query(Inspection)
+            .filter(Inspection.asset_id == asset_id)
+            .order_by(Inspection.inspection_date.desc())
+            .all()
+        )
+        media_db = db.query(AssetMedia).filter(AssetMedia.asset_id == asset_id).all()
+        sources_db = db.query(EvidenceSource).filter(EvidenceSource.asset_id == asset_id).all()
+        existing_findings_db = db.query(AssetFinding).filter(AssetFinding.asset_id == asset_id).all()
+
+        payload, run_status, p_tok, c_tok, t_tok, cost_usd, latency = ai_service.run_asset_intelligence(
+            asset, inspections_db, media_db, sources_db, existing_findings_db
+        )
+
+        run_id = f"RUN-{asset_id}-{uuid.uuid4().hex[:8].upper()}"
+        latest_run = AIIntelligenceRun(
+            id=run_id,
+            asset_id=asset_id,
+            model_used=ai_service.model,
+            status=run_status,
+            overall_condition_summary=payload.overall_condition_summary,
+            structural_summary=payload.structural_summary,
+            environmental_summary=payload.environmental_summary,
+            compliance_summary=payload.compliance_summary,
+            operational_summary=payload.operational_summary,
+            predictive_summary=payload.predictive_summary,
+            predictive_data_warning=payload.predictive_data_warning,
+            data_limitations=payload.data_limitations,
+            conflicting_evidence=payload.conflicting_evidence,
+            prompt_tokens=p_tok,
+            completion_tokens=c_tok,
+            total_tokens=t_tok,
+            estimated_cost_usd=cost_usd,
+            latency_ms=latency,
+        )
+        db.add(latest_run)
+        db.commit()
+        db.refresh(latest_run)
+
+    return AIIntelligenceRunResponse(**latest_run.to_dict())
+
+
+@app.get(
+    "/api/assets/{asset_id}/intelligence/history",
+    response_model=List[AIIntelligenceRunResponse],
+    tags=["Intelligence"],
+    summary="Get history of all AI intelligence runs for this asset",
+)
+def get_asset_intelligence_history(asset_id: str, db: Session = Depends(get_db)):
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found.")
+
+    runs = (
+        db.query(AIIntelligenceRun)
+        .filter(AIIntelligenceRun.asset_id == asset_id)
+        .order_by(AIIntelligenceRun.created_at.desc())
+        .all()
+    )
+    return [AIIntelligenceRunResponse(**r.to_dict()) for r in runs]
+
+
+@app.post(
+    "/api/findings/{finding_id}/review",
+    response_model=AssetFindingResponse,
+    tags=["Intelligence"],
+    summary="Submit engineer review for an AI or field finding",
+)
+def review_asset_finding(
+    finding_id: str,
+    req: FindingReviewRequest,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """
+    Engineer Verification Workflow:
+    Findings start as 'Pending Review' and require human-in-the-loop sign-off:
+    - 'Verified': Confirmed by authorized engineer as genuine engineering defect
+    - 'Rejected': Ruled out by engineer with documented justification
+    - 'Requires Further Inspection': Queued for physical site visit / NDT
+    Requires administrative / engineering role authorization.
+    """
+    valid_statuses = ["Pending Review", "Verified", "Rejected", "Requires Further Inspection"]
+    if req.verification_status not in valid_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid verification_status. Allowed values: {', '.join(valid_statuses)}",
+        )
+
+    finding = db.query(AssetFinding).filter(AssetFinding.id == finding_id).first()
+    if not finding:
+        raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found.")
+
+    admin_identity = f"{admin_user.full_name} (@{admin_user.username})"
+    if req.reviewed_by and req.reviewed_by.strip() and req.reviewed_by.strip() != "Authorized Engineering Officer":
+        reviewer = f"{admin_identity} [{req.reviewed_by.strip()}]"
+    else:
+        reviewer = admin_identity
+
+    finding.verification_status = req.verification_status
+    finding.reviewed_by = reviewer
+    finding.reviewed_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    if req.review_decision_notes:
+        finding.review_decision_notes = req.review_decision_notes
+
+    # If rejected, mark resolution status as Closed/Rejected
+    if req.verification_status == "Rejected":
+        finding.resolution_status = "Rejected"
+    elif req.verification_status == "Verified" and finding.resolution_status == "Rejected":
+        finding.resolution_status = "Open"
+
+    db.commit()
+    db.refresh(finding)
+    return AssetFindingResponse(**finding.to_dict())
+
+
+@app.post(
+    "/api/assets/{asset_id}/intelligence/analyze-document",
+    tags=["Intelligence"],
+    summary="Upload and analyze an inspection document with OpenAI",
+)
+async def analyze_inspection_document_endpoint(
+    asset_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found.")
+
+    # Validation: File extension and size
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in [".pdf", ".txt", ".md"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported document format '{ext}'. Allowed: .pdf, .txt, .md",
+        )
+
+    content_bytes = await file.read()
+    if len(content_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Document exceeds maximum 10MB limit.")
+
+    text_extracted = ""
+    if ext == ".pdf":
+        try:
+            import pypdf
+            import io
+            reader = pypdf.PdfReader(io.BytesIO(content_bytes))
+            text_extracted = "\n\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception:
+            text_extracted = f"Binary PDF content uploaded: {file.filename} ({len(content_bytes)} bytes)"
+    else:
+        try:
+            text_extracted = content_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            text_extracted = str(content_bytes[:4000])
+
+    analysis_res = ai_service.analyze_document(text_extracted, file.filename or "uploaded_report.pdf", asset)
+    return analysis_res.model_dump()
+
+
+@app.post(
+    "/api/assets/{asset_id}/intelligence/analyze-image",
+    tags=["Intelligence"],
+    summary="Analyze an infrastructure photograph with OpenAI Vision",
+)
+async def analyze_infrastructure_image_endpoint(
+    asset_id: str,
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found.")
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image format '{ext}'. Allowed: .jpg, .jpeg, .png, .webp",
+        )
+
+    img_bytes = await file.read()
+    if len(img_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image exceeds maximum 10MB limit.")
+
+    analysis_res = ai_service.analyze_image(img_bytes, file.filename or "photo.jpg", asset, caption=caption)
+    return analysis_res.model_dump()
+
+
+@app.get(
+    "/api/copilot/history",
+    tags=["Copilot"],
+    summary="Get recent grounded conversation history",
+)
+def get_copilot_history(
+    asset_id: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    query = db.query(AIConversationMessage)
+    if asset_id:
+        query = query.filter(AIConversationMessage.asset_id == asset_id)
+    messages = query.order_by(AIConversationMessage.created_at.desc()).limit(limit).all()
+    return [m.to_dict() for m in messages]
+
 
 
 @app.get(

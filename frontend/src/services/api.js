@@ -311,9 +311,13 @@ export async function askCopilot(question, options = {}) {
   }
 
   try {
+    const opts = typeof options === 'string' ? { asset_id: options } : (options || {});
     const payload = { question: question.trim() };
-    if (options.asset_id) payload.asset_id = options.asset_id;
-    if (options.category && options.category !== 'All') payload.category = options.category;
+    if (opts.asset_id) payload.asset_id = opts.asset_id;
+    if (opts.category && opts.category !== 'All') payload.category = opts.category;
+    if (Array.isArray(opts.conversation_history) && opts.conversation_history.length > 0) {
+      payload.conversation_history = opts.conversation_history;
+    }
 
     const res = await fetch(`${BASE_URL}/api/copilot/ask`, {
       method: 'POST',
@@ -767,6 +771,127 @@ export async function fetchAssetIntelligence(assetId) {
 }
 
 /**
+ * Run 5-module AI intelligence analysis for an asset
+ * @param {string} assetId
+ */
+export async function runAssetIntelligence(assetId) {
+  try {
+    const res = await fetch(`${BASE_URL}/api/assets/${encodeURIComponent(assetId)}/intelligence/run`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (!res.ok) {
+      if (res.status === 401) handleUnauthorized();
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(formatApiError(errData, res.status, 'run asset intelligence analysis'));
+    }
+    return await res.json();
+  } catch (err) {
+    console.error(`API Error in runAssetIntelligence(${assetId}):`, err);
+    throw err;
+  }
+}
+
+/**
+ * Fetch latest AI intelligence run for an asset
+ * @param {string} assetId
+ */
+export async function fetchLatestAssetIntelligence(assetId) {
+  try {
+    const res = await fetch(`${BASE_URL}/api/assets/${encodeURIComponent(assetId)}/intelligence/latest`, {
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (!res.ok) {
+      if (res.status === 401) handleUnauthorized();
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(formatApiError(errData, res.status, 'fetch latest intelligence run'));
+    }
+    return await res.json();
+  } catch (err) {
+    console.error(`API Error in fetchLatestAssetIntelligence(${assetId}):`, err);
+    throw err;
+  }
+}
+
+/**
+ * Submit engineer review decision on a finding (Verified, Rejected, Requires Further Inspection)
+ * @param {string} findingId
+ * @param {Object} reviewData - { verification_status, review_decision_notes, reviewed_by }
+ */
+export async function reviewAssetFinding(findingId, reviewData) {
+  try {
+    const res = await fetch(`${BASE_URL}/api/findings/${encodeURIComponent(findingId)}/review`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
+      body: JSON.stringify(reviewData),
+    });
+    if (!res.ok) {
+      if (res.status === 401) handleUnauthorized();
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(formatApiError(errData, res.status, 'submit engineer review'));
+    }
+    return await res.json();
+  } catch (err) {
+    console.error(`API Error in reviewAssetFinding(${findingId}):`, err);
+    throw err;
+  }
+}
+
+/**
+ * Analyze an uploaded inspection report with OpenAI
+ * @param {string} assetId
+ * @param {File} file
+ */
+export async function analyzeInspectionDocument(assetId, file) {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE_URL}/api/assets/${encodeURIComponent(assetId)}/intelligence/analyze-document`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!res.ok) {
+      if (res.status === 401) handleUnauthorized();
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(formatApiError(errData, res.status, 'analyze inspection document'));
+    }
+    return await res.json();
+  } catch (err) {
+    console.error(`API Error in analyzeInspectionDocument(${assetId}):`, err);
+    throw err;
+  }
+}
+
+/**
+ * Analyze an infrastructure photo with OpenAI Vision
+ * @param {string} assetId
+ * @param {File} file
+ * @param {string} caption
+ */
+export async function analyzeInfrastructureImage(assetId, file, caption = '') {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('caption', caption);
+    const res = await fetch(`${BASE_URL}/api/assets/${encodeURIComponent(assetId)}/intelligence/analyze-image`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!res.ok) {
+      if (res.status === 401) handleUnauthorized();
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(formatApiError(errData, res.status, 'analyze infrastructure image'));
+    }
+    return await res.json();
+  } catch (err) {
+    console.error(`API Error in analyzeInfrastructureImage(${assetId}):`, err);
+    throw err;
+  }
+}
+
+/**
  * Generate/fetch structured printable intelligence report for an asset
  * @param {string} assetId
  */
@@ -786,4 +911,45 @@ export async function fetchAssetReport(assetId) {
     throw err;
   }
 }
+
+/**
+ * Fetch grounded conversation history
+ * @param {string|null} assetId
+ */
+export async function fetchCopilotHistory(assetId = null) {
+  try {
+    const query = assetId ? `?asset_id=${encodeURIComponent(assetId)}` : '';
+    const res = await fetch(`${BASE_URL}/api/copilot/history${query}`, {
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (!res.ok) {
+      if (res.status === 401) handleUnauthorized();
+      return [];
+    }
+    return await res.json();
+  } catch (err) {
+    console.error('API Error in fetchCopilotHistory:', err);
+    return [];
+  }
+}
+
+/**
+ * Fetch Central Cloud AI Status and token telemetry
+ */
+export async function fetchAIStatus() {
+  try {
+    const res = await fetch(`${BASE_URL}/api/ai/status`, {
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (!res.ok) {
+      return { configured: false, status: 'offline', model: 'none' };
+    }
+    return await res.json();
+  } catch (err) {
+    return { configured: false, status: 'offline', model: 'none' };
+  }
+}
+
+
+
 

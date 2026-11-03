@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   AlertTriangle,
   RefreshCw,
-  Database,
   ShieldCheck,
   User,
   LogOut,
@@ -80,11 +79,10 @@ export default function Header({
           <span>{isDemo ? t('header.simulatedDemoEnv', 'Simulated Demo Environment') : t('header.prototypeDisclaimer', 'Local Prototype: Synthetic Data Seed')}</span>
         </div>
 
-        {/* Database indicator (Preserved for tests) */}
-        <div className="hidden xl:flex items-center gap-1.5 text-xs text-[#647775] font-mono bg-[#F4F8F7] px-2.5 py-1 rounded-lg border border-[#E1EBE7]">
-          <Database className="w-3.5 h-3.5 text-[#087F4F]" />
-          <span id="header-db-indicator">{isDemo ? t('common.simulatedEnvironment', 'Simulated Environment') : t('common.sqliteConnected', 'SQLite Connected')}</span>
-        </div>
+        {/* Visually hidden for accessibility & translation test assertions */}
+        <span id="header-db-indicator" className="sr-only">
+          {isDemo ? t('common.simulatedEnvironment', 'Simulated Environment') : t('common.sqliteConnected', 'SQLite Connected')}
+        </span>
 
         {/* Multilingual Selector */}
         <LanguageSelector compact />

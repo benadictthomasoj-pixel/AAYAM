@@ -54,6 +54,40 @@ def ensure_schema_compatibility(target_engine=None):
                 if "verification_outcome" not in cols:
                     conn.execute(text("ALTER TABLE inspections ADD COLUMN verification_outcome VARCHAR(50)"))
                     conn.commit()
+            if "asset_findings" in tables:
+                finding_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(asset_findings)")).fetchall()]
+                col_defs = [
+                    ("intelligence_category", "VARCHAR(50) DEFAULT 'Structural'"),
+                    ("evidence_classification", "VARCHAR(50) DEFAULT 'Documented'"),
+                    ("confidence_level", "VARCHAR(20) DEFAULT 'High'"),
+                    ("source_document", "VARCHAR(255)"),
+                    ("page_number", "INTEGER"),
+                    ("image_reference", "VARCHAR(255)"),
+                    ("reviewed_by", "VARCHAR(100)"),
+                    ("reviewed_at", "VARCHAR(50)"),
+                    ("review_decision_notes", "TEXT"),
+                    ("ai_generated", "BOOLEAN DEFAULT 0"),
+                    ("run_id", "VARCHAR(64)"),
+                    ("exact_location", "VARCHAR(200)"),
+                    ("severity_level", "INTEGER DEFAULT 3"),
+                    ("potential_consequences", "TEXT"),
+                    ("immediate_action", "TEXT"),
+                    ("further_investigation", "TEXT"),
+                    ("responsible_discipline", "VARCHAR(150)"),
+                    ("action_stage", "VARCHAR(30) DEFAULT 'Stage A'"),
+                    ("timeframe", "VARCHAR(50)"),
+                    ("approval_required", "VARCHAR(150)"),
+                    ("risk_contribution_pts", "FLOAT DEFAULT 0.0"),
+                ]
+                for col_name, col_type in col_defs:
+                    if col_name not in finding_cols:
+                        conn.execute(text(f"ALTER TABLE asset_findings ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            if "ai_intelligence_runs" in tables:
+                run_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(ai_intelligence_runs)")).fetchall()]
+                if "predictive_data_warning" not in run_cols:
+                    conn.execute(text("ALTER TABLE ai_intelligence_runs ADD COLUMN predictive_data_warning TEXT"))
+                    conn.commit()
     except Exception as e:
         # Pass gracefully if not SQLite or during unit test setup
         pass

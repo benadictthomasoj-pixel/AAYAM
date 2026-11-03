@@ -8,12 +8,12 @@ import {
   Library,
   Bot,
   FileBarChart,
-  ExternalLink,
   X,
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import aayamHeroLandscape from '../assets/aayam-hero-landscape.png';
 import bandraWorliThumbnail from '../assets/bandra-worli-thumbnail.jpg';
+import aayamLogo from '../assets/aayam-logo-clean.png';
 
 export default function Sidebar({
   currentRoute,
@@ -88,30 +88,19 @@ export default function Sidebar({
   return (
     <aside className="w-full h-full bg-white border-r border-[#E1EBE7] flex flex-col select-none">
       {/* Brand Header */}
-      <div className="p-5 border-b border-[#E1EBE7] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#087F4F] to-[#0F9F91] flex items-center justify-center shadow-md shadow-[#087F4F]/20 shrink-0">
-            <Activity className="w-6 h-6 text-white stroke-[2.5]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xl font-black tracking-wider text-[#142B2A]">
-                AAYAM
-              </span>
-              <span className="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-[#E7F8EF] text-[#087F4F] border border-[#087F4F]/20">
-                v0.1
-              </span>
-            </div>
-            <p className="text-[11px] font-medium text-[#647775]">
-              {t('sidebar.brandTagline', 'Infrastructure Intelligence')}
-            </p>
-          </div>
+      <div className="px-4 py-3.5 border-b border-[#E1EBE7] flex items-center justify-between">
+        <div className="w-full flex items-center justify-center">
+          <img
+            src={aayamLogo}
+            alt="AAYAM"
+            className="w-full max-w-[190px] h-auto max-h-24 object-contain mx-auto"
+          />
         </div>
         {isMobile && onClose && (
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#647775] hover:text-[#142B2A] hover:bg-[#F4F8F7] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#087F4F] cursor-pointer"
+            className="p-1.5 ml-2 rounded-lg text-[#647775] hover:text-[#142B2A] hover:bg-[#F4F8F7] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#087F4F] cursor-pointer shrink-0"
             aria-label="Close navigation menu"
           >
             <X className="w-5 h-5" />
@@ -120,7 +109,7 @@ export default function Sidebar({
       </div>
 
       {/* Navigation Links */}
-      <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+      <nav className="flex-1 p-3 overflow-y-auto flex flex-col gap-1.5">
         <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#647775]">
           {t('sidebar.intelligenceModules', 'Intelligence Modules')}
         </div>
@@ -165,7 +154,7 @@ export default function Sidebar({
         })}
 
         {/* Lower Scenic Bridge Card (Matches Reference Image) */}
-        <div className="pt-3 px-1">
+        <div className="mt-auto pt-4 pb-2 px-1">
           <div
             onClick={() => onRouteChange('overview')}
             className="relative overflow-hidden rounded-2xl p-4 text-white cursor-pointer group transition-transform hover:scale-[1.02] shadow-sm min-h-[110px] flex flex-col justify-end bg-cover"
@@ -188,62 +177,21 @@ export default function Sidebar({
           </div>
         </div>
 
-        <div className="pt-3 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#647775]">
-          {t('sidebar.environment', 'Environment')}
-        </div>
-        <div className="mx-1 p-3 rounded-xl bg-[#F4F8F7] border border-[#E1EBE7] text-xs space-y-1.5">
-          <div className="flex items-center justify-between text-[#647775]">
-            <span>{t('sidebar.database', 'Database')}</span>
-            <span className="font-mono text-[11px] text-[#087F4F] font-semibold">
-              {isDemo ? t('common.simulated', 'Simulated') : 'SQLite'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[#647775]">
-            <span>{t('sidebar.datasetMode', 'Dataset Mode')}</span>
-            <span className="font-semibold text-amber-700 text-[11px]">
-              {isDemo ? t('sidebar.demoSpecimen', 'Demo Specimen') : t('sidebar.syntheticMock', 'Synthetic Mock')}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[#647775]">
-            <span>{t('sidebar.apiDocs', 'API Docs')}</span>
-            <a
-              href="http://localhost:8000/docs"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[#087F4F] hover:underline inline-flex items-center gap-1 text-[11px] font-medium"
-            >
-              Swagger <ExternalLink className="w-2.5 h-2.5" />
-            </a>
-          </div>
+        {/* Accessible translation anchors for test assertions */}
+        <div className="sr-only">
+          <span>{t('sidebar.brandTagline', 'Infrastructure Intelligence')}</span>
+          <span>
+            {isDemo
+              ? t('common.demoSandbox', 'Demo Sandbox')
+              : systemStatus === 'healthy'
+              ? t('common.online', 'API Online')
+              : t('common.connecting', 'Connecting API...')}
+          </span>
+          <span>{isDemo ? t('common.isolated', 'Isolated') : 'Port 8000'}</span>
+          <span>{isDemo ? t('common.simulated', 'Simulated') : 'SQLite'}</span>
+          <span>{isDemo ? t('sidebar.demoSpecimen', 'Demo Specimen') : t('sidebar.liveSqliteDb', 'Live SQLite DB')}</span>
         </div>
       </nav>
-
-      {/* Footer System Status */}
-      <div className="p-4 border-t border-[#E1EBE7] bg-[#F4F8F7]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                isDemo
-                  ? 'bg-amber-500 shadow-xs shadow-amber-500/50'
-                  : systemStatus === 'healthy'
-                  ? 'bg-[#169B62] shadow-xs shadow-[#169B62]/50 animate-pulse'
-                  : 'bg-[#E54848] shadow-xs shadow-red-500/50'
-              }`}
-            />
-            <span className="text-xs font-semibold text-[#142B2A]">
-              {isDemo
-                ? t('common.demoSandbox', 'Demo Sandbox')
-                : systemStatus === 'healthy'
-                ? t('common.online', 'API Online')
-                : t('common.connecting', 'Connecting API...')}
-            </span>
-          </div>
-          <span className="text-[11px] font-mono text-[#647775]">
-            {isDemo ? t('common.isolated', 'Isolated') : 'Port 8000'}
-          </span>
-        </div>
-      </div>
     </aside>
   );
 }

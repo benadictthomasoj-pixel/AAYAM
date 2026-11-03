@@ -200,6 +200,24 @@ def init_db(force_reseed: bool = False):
             db.commit()
             logger.info("Seeded structured findings.")
 
+        # Seed default administrator if none exists
+        from app.models import User
+        from app.security import hash_password
+        admin_exists = db.query(User).filter(User.role == "admin").first()
+        if not admin_exists:
+            admin_user = User(
+                id="USER-ADM-CANONICAL",
+                username="admin",
+                email="admin@aayam.gov.in",
+                full_name="Chief Infrastructure Engineer (Admin)",
+                password_hash=hash_password("Admin123456!"),
+                role="admin",
+                is_active=True,
+            )
+            db.add(admin_user)
+            db.commit()
+            logger.info("Seeded canonical administrator account.")
+
         logger.info(
             f"Database ready: {db.query(Asset).count()} assets, "
             f"{db.query(Inspection).count()} inspections, "
