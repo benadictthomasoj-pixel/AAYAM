@@ -40,6 +40,7 @@ export default function InspectionHistoryModal({
   onRefreshGlobal,
   isAdmin = false,
   isDemo = false,
+  initialShowAddForm = false,
 }) {
   const { t } = useLanguage();
   const [inspections, setInspections] = useState([]);
@@ -99,10 +100,10 @@ export default function InspectionHistoryModal({
       loadInspections();
       setActionSuccess(null);
       setError(null);
-      setShowAddForm(false);
+      setShowAddForm(Boolean(initialShowAddForm));
       setVerifyingInspId(null);
     }
-  }, [isOpen, asset?.id]);
+  }, [isOpen, asset?.id, initialShowAddForm]);
 
   // Synchronize asset telemetry across parent views
   const refreshParentAsset = async () => {

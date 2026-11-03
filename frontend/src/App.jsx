@@ -185,7 +185,7 @@ export function DashboardView({ isDemo = false, onExitDemo }) {
   const currentMeta = routeMeta[currentRoute] || routeMeta.overview;
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 font-sans">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#F4F8F7] text-[#142B2A] font-sans">
       {/* Persistent Demo Mode Banner */}
       {isDemo && <DemoBanner onExitDemo={onExitDemo} />}
 
@@ -255,7 +255,7 @@ export function DashboardView({ isDemo = false, onExitDemo }) {
           />
 
         {/* Scrollable Viewport */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 bg-[#F4F8F7] min-w-0">
           {/* Backend Offline Warning Banner if connection failed */}
           {error && (
             <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start justify-between gap-4">

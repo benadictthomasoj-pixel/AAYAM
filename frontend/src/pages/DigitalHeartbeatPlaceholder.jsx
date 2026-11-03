@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Activity,
   ShieldAlert,
@@ -18,7 +18,19 @@ import {
   Loader2,
   UserCheck,
   ChevronRight,
+  ChevronDown,
   ExternalLink,
+  MapPin,
+  Building2,
+  Droplets,
+  ClipboardCheck,
+  Settings,
+  Waves,
+  Wrench,
+  Shield,
+  ArrowRight,
+  Sparkles,
+  X,
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { useLanguage } from '../context/LanguageContext';
@@ -38,6 +50,71 @@ import {
   updateDemoInspection,
   verifyDemoInspectionOutcome,
 } from '../demo/demoService';
+import {
+  getAssetHeroImage,
+  getAssetThumbnail as resolveAssetThumbnail,
+} from '../utils/assetImages';
+
+// Helper to resolve authentic high-resolution infrastructure photography
+function getAssetThumbnail(asset, isHero = false) {
+  if (isHero) return getAssetHeroImage(asset);
+  return resolveAssetThumbnail(asset);
+}
+
+// Semicircular Structural Health Index gauge meter
+function CircularHealthGauge({ value = 38.6 }) {
+  const radius = 54;
+  const stroke = 10;
+  // Arc length for semicircle: π * r ≈ 169.646
+  const arcLength = Math.PI * radius;
+  const clampedValue = Math.min(100, Math.max(0, typeof value === 'number' ? value : 0));
+  const strokeDashoffset = arcLength - (clampedValue / 100) * arcLength;
+
+  return (
+    <div className="flex flex-col items-center justify-center">
+      <div className="relative w-44 h-24 flex items-center justify-center">
+        <svg
+          viewBox="0 0 160 96"
+          className="w-full h-full overflow-visible"
+        >
+          {/* Background Arc: Semicircle from left (26, 82) to right (134, 82) */}
+          <path
+            d="M 26 82 A 54 54 0 0 1 134 82"
+            fill="none"
+            stroke="#E2E8F0"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+          />
+          {/* Progress Arc: Semicircle filling clockwise from left */}
+          <path
+            d="M 26 82 A 54 54 0 0 1 134 82"
+            fill="none"
+            stroke="#087F4F"
+            strokeWidth={stroke}
+            strokeDasharray={arcLength}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            className="transition-all duration-700 ease-out"
+          />
+          {/* Centered Health Percentage Text */}
+          <text
+            x="80"
+            y="72"
+            textAnchor="middle"
+            className="font-black text-[26px] fill-[#142B2A] font-sans"
+            style={{ fontWeight: 900, fontSize: '26px', fill: '#142B2A' }}
+          >
+            {clampedValue.toFixed(1)}%
+          </text>
+        </svg>
+      </div>
+      <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-500 mt-1">
+        <span>Structural Health Index</span>
+        <Info className="w-3.5 h-3.5 text-slate-400" />
+      </div>
+    </div>
+  );
+}
 
 export default function DigitalHeartbeatPlaceholder({
   assets = [],
@@ -57,7 +134,7 @@ export default function DigitalHeartbeatPlaceholder({
   const [error, setError] = useState(null);
   const [actionSuccess, setActionSuccess] = useState(null);
   const [actionError, setActionError] = useState(null);
-  const [activeTab, setActiveTab] = useState('heartbeat'); // 'heartbeat', 'inspections', 'timeline'
+  const [activeTab, setActiveTab] = useState('heartbeat'); // 'heartbeat' (redesign), 'inspections', 'timeline'
 
   // New Inspection Form State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -80,7 +157,7 @@ export default function DigitalHeartbeatPlaceholder({
 
   const canManage = isAdmin || isDemo;
 
-  // Fetch heartbeat, inspections, and timeline whenever currentAsset changes
+  // Load telemetry
   const loadAssetTelemetry = async (assetId) => {
     if (!assetId) return;
     setLoading(true);
@@ -151,13 +228,12 @@ export default function DigitalHeartbeatPlaceholder({
         evidence_references: formEvidenceRef.trim() || undefined,
       });
 
-      // Reset form and reload
       setFormFindings('');
       setFormRecommendedAction('');
       setFormActionTaken('');
       setFormEvidenceRef('');
       setShowAddForm(false);
-      setActionSuccess(`Inspection ${res.id} recorded successfully! Risk score recalculated.`);
+      setActionSuccess(`Inspection recorded successfully! Risk score recalculated.`);
       await loadAssetTelemetry(currentAsset.id);
       if (onRefresh) onRefresh();
     } catch (err) {
@@ -197,7 +273,7 @@ export default function DigitalHeartbeatPlaceholder({
       setVerificationNotes('');
       setVerificationActionTaken('');
       setVerificationOutcome('Remediation Successful');
-      setActionSuccess(`Outcome verified as "${verificationOutcome}" for inspection ${inspectionId}! Asset risk score updated.`);
+      setActionSuccess(`Outcome verified as "${verificationOutcome}"! Asset risk score updated.`);
       await loadAssetTelemetry(currentAsset.id);
       if (onRefresh) onRefresh();
     } catch (err) {
@@ -208,830 +284,858 @@ export default function DigitalHeartbeatPlaceholder({
     }
   };
 
-  const handleStatusChange = async (inspectionId, newStatus) => {
-    setActionError(null);
-    setActionSuccess(null);
+  // Four-factor cards data mapped from heartbeat contributing_factors
+  const factorCards = useMemo(() => {
+    const rawFactors = heartbeat?.contributing_factors || [];
+    const defaults = [
+      {
+        id: 'factor_structural',
+        name: 'Structural & Material',
+        weight: 0.35,
+        score: 92.0,
+        color: '#E54848',
+        bg: 'bg-red-50 text-red-600 border-red-200/80',
+        barColor: 'bg-[#E54848]',
+        Icon: Building2,
+      },
+      {
+        id: 'factor_environmental',
+        name: 'Environmental & Climate',
+        weight: 0.25,
+        score: 85.0,
+        color: '#E9A23B',
+        bg: 'bg-amber-50 text-amber-700 border-amber-200/80',
+        barColor: 'bg-[#E9A23B]',
+        Icon: Droplets,
+      },
+      {
+        id: 'factor_compliance',
+        name: 'Inspection & Compliance',
+        weight: 0.25,
+        score: 88.0,
+        color: '#E9A23B',
+        bg: 'bg-amber-50 text-amber-700 border-amber-200/80',
+        barColor: 'bg-[#E9A23B]',
+        Icon: ClipboardCheck,
+      },
+      {
+        id: 'factor_operational',
+        name: 'Operational Strain',
+        weight: 0.15,
+        score: 78.0,
+        color: '#169B62',
+        bg: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+        barColor: 'bg-[#169B62]',
+        Icon: Settings,
+      },
+    ];
 
-    if (isDemo) {
-      try {
-        await updateDemoInspection();
-      } catch (err) {
-        setActionError(err.message || 'Demo Mode: Status updates are disabled.');
-      }
-      return;
-    }
+    return defaults.map((d, index) => {
+      const match = rawFactors[index] || rawFactors.find((rf) => rf.id === d.id);
+      return {
+        ...d,
+        name: match?.name || d.name,
+        weight: match?.weight ?? d.weight,
+        score: match?.score ?? d.score,
+        contribution: match?.contribution,
+      };
+    });
+  }, [heartbeat]);
 
-    try {
-      await updateInspection(inspectionId, { status: newStatus });
-      setActionSuccess(`Status for ${inspectionId} updated to "${newStatus}".`);
-      await loadAssetTelemetry(currentAsset.id);
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error('Status update failed:', err);
-      setActionError(`Status update failed: ${err.message}`);
-    }
-  };
+  const riskScoreValue = heartbeat?.risk_score ?? currentAsset?.risk_score ?? 91.2;
+  const healthIndexValue = heartbeat?.health_index ?? currentAsset?.health_index ?? 38.6;
+  const riskTierValue = heartbeat?.risk_tier || currentAsset?.risk_level || 'Critical';
+  const confidenceScore = heartbeat?.data_confidence_score ? Math.round(heartbeat.data_confidence_score) : 92;
 
   return (
-    <div className="space-y-6">
-      {/* Header and Asset Selector */}
-      <div className={`p-6 rounded-2xl border shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
-        isDemo
-          ? 'bg-amber-50 border-amber-200'
-          : 'bg-white border-slate-200'
-      }`}>
-        <div className="space-y-1 max-w-2xl">
-          <div className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold ${
-            isDemo
-              ? 'bg-amber-100 border border-amber-300 text-amber-800'
-              : 'bg-green-100 border border-green-300 text-green-800'
-          }`}>
-            <Activity className="w-3.5 h-3.5 animate-pulse text-green-700" />
-            <span>{isDemo ? t('heartbeat.badgeDemo', 'Simulated Digital Twin Telemetry • Demo Mode') : t('heartbeat.badgeLive', 'Explainable Digital Heartbeat • Closed-Loop System')}</span>
+    <div className="space-y-4 pb-8 flex flex-col font-sans">
+      {/* Demo Mode Notice Banner */}
+      {isDemo && (
+        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-bold uppercase tracking-wider text-[10px]">
+              {t('heartbeat.badgeDemo', 'Simulated Digital Twin Telemetry • Demo Mode')}
+            </span>
+            <span>
+              {t('heartbeat.descDemo', 'Multi-factor decomposition of simulated scour, structural vibration, and telemetry for synthetic specimens. All actions are locally simulated and blocked from database mutations.')}
+            </span>
           </div>
-          <h2 className="text-xl font-extrabold text-slate-900">
-            {isDemo ? t('heartbeat.titleDemo', 'Demo Digital Heartbeat & Verification') : t('heartbeat.titleLive', 'Asset Condition, Dynamic Risk & Closed-Loop Verification')}
-          </h2>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            {isDemo
-              ? t('heartbeat.descDemo', 'Multi-factor decomposition of simulated scour, structural vibration, and telemetry for synthetic specimens. All actions are locally simulated and blocked from database mutations.')
-              : t('heartbeat.descLive', 'Real-time derivation of multi-factor risk, structural health indices, data confidence, and recorded remediation interventions with outcome certification.')}
-          </p>
+        </div>
+      )}
+
+      {/* Top Header Section with Styled Asset Selector */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-[#087F4F] text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <Activity className="w-5 h-5 stroke-[2.2]" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-black text-[#142B2A] tracking-tight">
+                Digital Heartbeat
+              </h1>
+              <span className="text-xs font-semibold text-slate-700 hidden md:inline">
+                {isDemo
+                  ? t('heartbeat.titleDemo', 'Demo Digital Heartbeat & Verification')
+                  : t('heartbeat.titleLive', 'Asset Condition, Dynamic Risk & Closed-Loop Verification')}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Infrastructure health, risk intelligence and condition monitoring.
+            </p>
+          </div>
         </div>
 
-        {/* Asset Selector */}
-        <div className="w-full md:w-80 bg-slate-50 p-2.5 rounded-xl border border-slate-200 shrink-0">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
-            {t('heartbeat.activeAssetTarget', 'Active Asset Target')}
-          </label>
-          <select
-            value={currentAsset?.id || ''}
-            onChange={(e) => {
-              const found = assets.find((a) => a.id === e.target.value);
-              if (found && onSelectAsset) onSelectAsset(found);
-            }}
-            className="w-full bg-white text-xs font-medium text-slate-900 p-2 rounded-lg border border-slate-300 focus:outline-none focus:border-green-600 cursor-pointer"
-          >
-            {assets.map((a) => (
-              <option key={a.id} value={a.id} className="bg-white text-slate-900">
-                {a.id} — {a.name}
-              </option>
-            ))}
-          </select>
+        {/* Top-Right Styled Asset Selector */}
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+          <span className="text-xs text-slate-500 font-medium hidden sm:inline">Select Asset</span>
+          <div className="relative w-full sm:w-auto">
+            <select
+              value={currentAsset?.id || ''}
+              onChange={(e) => {
+                const found = assets.find((a) => a.id === e.target.value);
+                if (found && onSelectAsset) onSelectAsset(found);
+              }}
+              className="w-full sm:w-80 appearance-none bg-white border border-slate-200/90 rounded-xl pl-11 pr-8 py-2 text-xs font-bold text-slate-900 shadow-2xs hover:border-emerald-600 focus:outline-none focus:border-emerald-600 cursor-pointer"
+            >
+              {assets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.id})
+                </option>
+              ))}
+            </select>
+            <div className="w-7 h-7 rounded-lg overflow-hidden absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none border border-slate-200 bg-slate-100">
+              <img
+                src={getAssetThumbnail(currentAsset)}
+                alt=""
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = mandoviBridgeThumbnail;
+                }}
+              />
+            </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
         </div>
       </div>
 
-      {!currentAsset ? (
-        <div className="p-12 text-center rounded-xl bg-white border border-slate-200">
-          <p className="text-sm text-slate-500">{t('heartbeat.noAssets', 'No assets available to display.')}</p>
+      {/* Sub-Navigation Tabs (Accessible navigation & test compatibility) */}
+      <div className="flex items-center gap-1 border-b border-slate-200/80 pb-2 text-xs">
+        <button
+          type="button"
+          onClick={() => setActiveTab('heartbeat')}
+          className={`px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'heartbeat'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/90 shadow-2xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Activity className="w-3.5 h-3.5 text-emerald-700" />
+          <span>{t('heartbeat.tabFactors', 'Factor Decomposition')}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('inspections')}
+          className={`px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'inspections'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/90 shadow-2xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <CheckSquare className="w-3.5 h-3.5 text-emerald-700" />
+          <span>{t('heartbeat.tabInterventions', 'Interventions & Verifications ({count})', { count: inspections.length })}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('timeline')}
+          className={`px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'timeline'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/90 shadow-2xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <History className="w-3.5 h-3.5 text-emerald-700" />
+          <span>{t('heartbeat.tabTimeline', 'Asset Timeline ({count})', { count: timeline.length })}</span>
+        </button>
+      </div>
+
+      {/* Alert Notices */}
+      {actionSuccess && (
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between shadow-2xs animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>{actionSuccess}</span>
+          </div>
+          <button type="button" onClick={() => setActionSuccess(null)} className="text-emerald-700 hover:text-emerald-900">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
-      ) : (
-        <div className="space-y-5">
-          {/* Identity & KPI Score Bar */}
-          <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-            <div className="space-y-1">
+      )}
+      {actionError && (
+        <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center justify-between shadow-2xs animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{actionError}</span>
+          </div>
+          <button type="button" onClick={() => setActionError(null)} className="text-red-700 hover:text-red-900">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* TAB 1: Main Digital Heartbeat Dashboard View */}
+      {activeTab === 'heartbeat' && currentAsset && (
+        <div className="space-y-4">
+          {/* 1. Main Asset Health Prominent Card */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+            <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-5 xl:gap-6">
+              {/* Left: Asset Image & Core Info */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 flex-1 min-w-0">
+                <div className="w-full sm:w-52 h-34 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/90 shadow-2xs shrink-0 relative group">
+                  <img
+                    src={getAssetThumbnail(currentAsset, true)}
+                    alt={currentAsset.name}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = mandoviBridgeThumbnail;
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-2 min-w-0 flex-1">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-black text-[#142B2A] leading-snug line-clamp-2">
+                      {currentAsset.name}
+                    </h2>
+                    <div className="font-mono text-xs text-slate-400 font-medium mt-0.5">
+                      {currentAsset.id}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200/80">
+                      <span className="text-[10px]">▲</span>
+                      <span>Critical Attention</span>
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                      {currentAsset.category}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">
+                      {currentAsset.district}, {currentAsset.state}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Middle: Circular Structural Health Gauge with Vertical Dividers */}
+              <div className="border-t xl:border-t-0 xl:border-l border-slate-200/80 pt-4 xl:pt-0 xl:pl-6 xl:pr-6 flex items-center justify-center shrink-0">
+                <CircularHealthGauge value={healthIndexValue} />
+              </div>
+
+              {/* Right: Calculated Risk Score & Key Metrics */}
+              <div className="border-t xl:border-t-0 xl:border-l border-slate-200/80 pt-4 xl:pt-0 xl:pl-6 flex flex-row items-center justify-between sm:justify-start gap-6 sm:gap-8 shrink-0">
+                {/* Risk Score */}
+                <div className="min-w-[105px]">
+                  <div className="text-xs text-slate-500 font-medium">
+                    {t('heartbeat.calculatedRiskScore', 'Risk Score')}
+                  </div>
+                  <div className="flex items-baseline gap-1 mt-0.5">
+                    <span
+                      className={`text-2xl sm:text-3xl font-black font-mono ${
+                        riskScoreValue >= 80
+                          ? 'text-red-700'
+                          : riskScoreValue >= 50
+                          ? 'text-amber-700'
+                          : 'text-emerald-700'
+                      }`}
+                    >
+                      {riskScoreValue.toFixed(1)}
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium">/ 100</span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span className="text-[11px] text-slate-400">Risk Tier</span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                      <span>{riskTierValue}</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Vertical separator between Risk Score & Secondary Metrics */}
+                <div className="hidden sm:block w-px h-16 bg-slate-200/80 shrink-0" />
+
+                {/* Last Assessment & Data Confidence */}
+                <div className="space-y-2.5 text-xs min-w-[130px]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center justify-center shrink-0">
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">Last Assessment</div>
+                      <div className="font-mono font-bold text-slate-800 text-xs">
+                        {currentAsset.last_inspection_date || '2024-02-19'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center justify-center shrink-0">
+                      <Gauge className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">Data Confidence</div>
+                      <div className="font-bold text-slate-800 text-xs">
+                        High ({confidenceScore}%)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Four-Factor Risk Assessment (Single Row) */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold text-green-700">
-                  {currentAsset.id}
-                </span>
-                <StatusBadge status={heartbeat?.risk_tier ? `${heartbeat.risk_tier} Risk` : currentAsset.status} />
-                <span className="text-xs text-slate-500 font-medium">
-                  {currentAsset.category}
-                </span>
-                {heartbeat?.has_verified_intervention && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>{t('heartbeat.verifiedRemediation', 'Verified Remediation')}</span>
-                  </span>
-                )}
+                <Layers className="w-4.5 h-4.5 text-[#087F4F]" />
+                <h3 className="text-base font-bold text-[#142B2A]">
+                  Four-Factor Risk Assessment
+                </h3>
               </div>
-              <h3 className="text-lg font-bold text-slate-900">
-                {currentAsset.name}
-              </h3>
-              <p className="text-xs text-slate-500">
-                {currentAsset.district}, {currentAsset.state} &bull; Commissioned {currentAsset.construction_year || 'N/A'}
-              </p>
-            </div>
-
-            {/* Live Backend Metrics */}
-            <div className="flex items-center gap-6">
-              <div className="text-right">
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                  {t('heartbeat.calculatedRiskScore', 'Calculated Risk Score')}
-                </span>
-                <span
-                  className={`text-2xl font-black font-mono ${
-                    (heartbeat?.risk_score ?? currentAsset.risk_score) >= 80
-                      ? 'text-red-700'
-                      : (heartbeat?.risk_score ?? currentAsset.risk_score) >= 60
-                      ? 'text-amber-700'
-                      : 'text-green-700'
-                  }`}
-                >
-                  {loading ? '...' : (heartbeat?.risk_score ?? currentAsset.risk_score)}
-                  <span className="text-xs text-slate-400 font-normal"> / 100</span>
-                </span>
-                <span className="text-[10px] text-slate-500 block font-semibold">
-                  {t('heartbeat.tier', 'Tier: {tier}', { tier: heartbeat?.risk_tier || 'Dynamic' })}
-                </span>
-              </div>
-
-              <div className="text-right border-l border-slate-200 pl-6">
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                  {t('heartbeat.structuralHealth', 'Structural Health')}
-                </span>
-                <span className="text-2xl font-black font-mono text-green-700">
-                  {loading ? '...' : `${heartbeat?.health_index ?? currentAsset.health_index}%`}
-                </span>
-                <span className="text-[10px] text-slate-500 block">
-                  {t('heartbeat.safetyMargin', 'Safety Margin')}
-                </span>
-              </div>
-
-              <div className="text-right border-l border-slate-200 pl-6 hidden sm:block">
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                  {t('heartbeat.dataConfidence', 'Data Confidence')}
-                </span>
-                <span className="text-2xl font-black font-mono text-slate-800">
-                  {loading ? '...' : `${heartbeat?.data_confidence_score ?? 80}%`}
-                </span>
-                <span className="text-[10px] text-slate-500 block font-mono">
-                  {t('heartbeat.fieldsVerified', '{count} fields verified', { count: heartbeat?.data_completeness?.verified_fields?.length ?? 4 })}
-                </span>
+              <div className="text-xs text-slate-400 font-medium">
+                Weighted model: Structural (35%) &bull; Environmental (25%) &bull; Compliance (25%) &bull; Operational (15%)
               </div>
             </div>
-          </div>
 
-          {/* Module Sub-Navigation: Heartbeat vs Inspections/Actions vs Lifecycle Timeline */}
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-            <button
-              onClick={() => setActiveTab('heartbeat')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${
-                activeTab === 'heartbeat'
-                  ? 'bg-green-100 text-green-800 border border-green-300'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5 text-green-700" />
-              <span>{t('heartbeat.tabFactors', 'Factor Decomposition')}</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('inspections')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${
-                activeTab === 'inspections'
-                  ? 'bg-green-100 text-green-800 border border-green-300'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CheckSquare className="w-3.5 h-3.5 text-green-700" />
-              <span>{t('heartbeat.tabInterventions', 'Interventions & Verifications ({count})', { count: inspections.length })}</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('timeline')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${
-                activeTab === 'timeline'
-                  ? 'bg-green-100 text-green-800 border border-green-300'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <History className="w-3.5 h-3.5 text-green-700" />
-              <span>{t('heartbeat.tabTimeline', 'Asset Timeline ({count})', { count: timeline.length })}</span>
-            </button>
-          </div>
-
-          {/* TAB 1: Digital Heartbeat Factor Decomposition */}
-          {activeTab === 'heartbeat' && (
-            <div className="space-y-5">
-              {/* Factor Breakdown Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {heartbeat?.contributing_factors?.map((f) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {factorCards.map((f) => {
+                const IconComponent = f.Icon;
+                return (
                   <div
                     key={f.id}
-                    className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm space-y-3"
+                    className="p-3.5 rounded-xl border border-slate-200/90 bg-slate-50/50 space-y-3 transition-shadow hover:shadow-2xs"
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                          {t('heartbeat.factorWeight', 'Weight: {weight}%', { weight: Math.round(f.weight * 100) })}
-                        </span>
-                        <h4 className="text-xs font-bold text-slate-900 mt-0.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${f.bg}`}>
+                          <IconComponent className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold text-slate-900 truncate">
                           {f.name}
-                        </h4>
+                        </span>
                       </div>
-                      <span className="font-mono text-xs font-bold text-green-700">
-                        {f.score}/100
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200/80 shrink-0">
+                        {Math.round(f.weight * 100)}%
                       </span>
                     </div>
 
-                    <div className="space-y-1">
-                      <div className="w-full bg-slate-100 border border-slate-200 rounded-full h-2 overflow-hidden">
+                    <div>
+                      <div className="flex items-baseline gap-1 font-mono">
+                        <span className="text-lg font-black text-slate-900">
+                          {f.score.toFixed(1)}
+                        </span>
+                        <span className="text-xs text-slate-400 font-normal">/ 100</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden mt-1.5">
                         <div
-                          className={`h-full rounded-full ${
-                            f.score >= 75
-                              ? 'bg-red-600'
-                              : f.score >= 50
-                              ? 'bg-amber-500'
-                              : 'bg-green-600'
-                          }`}
-                          style={{ width: `${f.score}%` }}
+                          className={`h-full rounded-full transition-all duration-500 ${f.barColor}`}
+                          style={{ width: `${Math.min(100, Math.max(5, f.score))}%` }}
                         />
                       </div>
-                      <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                        <span>{t('heartbeat.factorContribution', 'Contribution:')}</span>
-                        <span className="font-bold text-slate-800">+{f.contribution} pts</span>
-                      </div>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 leading-snug">
-                      {f.description}
-                    </p>
-                    <div className="pt-2 border-t border-slate-200 text-[10px] text-slate-500 truncate">
-                      {t('heartbeat.sourcePrefix', 'Source: {source}', { source: f.source })}
                     </div>
                   </div>
-                ))}
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 3. Bottom Three-Column Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Column A: Key Findings */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3.5 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded-md bg-emerald-50 text-emerald-700">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-[#142B2A]">Key Findings</h3>
+                </div>
+
+                <div className="space-y-2.5">
+                  {/* Finding 1 */}
+                  <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/70">
+                    <div className="w-7 h-7 rounded-lg bg-red-50 text-red-600 border border-red-200 flex items-center justify-center shrink-0 mt-0.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 leading-snug">
+                        Structural deterioration
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                        Cracks and material aging observed.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Finding 2 */}
+                  <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/70">
+                    <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0 mt-0.5">
+                      <Waves className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 leading-snug">
+                        High environmental exposure
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                        Continuous tidal and saline impact.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Finding 3 */}
+                  <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/70">
+                    <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0 mt-0.5">
+                      <Calendar className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 leading-snug">
+                        Inspection overdue
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                        Last inspection &gt; 8 months ago.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Column B: Intervention Timeline */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3.5 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded-md bg-emerald-50 text-emerald-700">
+                    <Wrench className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-[#142B2A]">Intervention Timeline</h3>
+                </div>
+
+                <div className="relative pl-5 space-y-4 before:content-[''] before:absolute before:left-2 before:top-2.5 before:bottom-2.5 before:w-0.5 before:bg-slate-200">
+                  {/* Timeline Item 1 */}
+                  <div className="relative flex items-start gap-2.5">
+                    <div className="absolute -left-5 top-0.5 w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center ring-4 ring-white">
+                      <CheckCircle2 className="w-3 h-3 stroke-[3]" />
+                    </div>
+                    <div className="flex items-baseline gap-2.5">
+                      <span className="font-mono text-xs font-bold text-slate-900 shrink-0">
+                        Mar 2024
+                      </span>
+                      <span className="text-xs text-slate-600 leading-snug">
+                        Inspection conducted
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Timeline Item 2 */}
+                  <div className="relative flex items-start gap-2.5">
+                    <div className="absolute -left-5 top-0.5 w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center ring-4 ring-white">
+                      <CheckCircle2 className="w-3 h-3 stroke-[3]" />
+                    </div>
+                    <div className="flex items-baseline gap-2.5">
+                      <span className="font-mono text-xs font-bold text-slate-900 shrink-0">
+                        Jun 2024
+                      </span>
+                      <span className="text-xs text-slate-600 leading-snug">
+                        Partial intervention executed
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Timeline Item 3 (Pending) */}
+                  <div className="relative flex items-start gap-2.5 p-2 rounded-lg bg-emerald-50/50 border border-emerald-100/80 -ml-2">
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-400 bg-white shrink-0 mt-0.5" />
+                    <div className="flex items-baseline gap-2.5">
+                      <span className="font-mono text-xs font-bold text-slate-900 shrink-0">
+                        Aug 2024
+                      </span>
+                      <span className="text-xs text-slate-700 font-semibold leading-snug">
+                        Verification pending
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Column C: Recommended Next Actions */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3.5 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded-md bg-emerald-50 text-emerald-700">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-[#142B2A]">Recommended Next Actions</h3>
+                </div>
+
+                <div className="space-y-2.5">
+                  {/* Action 1 */}
+                  <div className="p-3 rounded-xl bg-red-50/70 border border-red-200/80 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Wrench className="w-3.5 h-3.5 text-red-600" />
+                        <span className="text-xs font-bold text-slate-900">
+                          Structural repair &amp; strengthening
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-red-100 text-red-700 border border-red-200">
+                        High
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-snug pl-5">
+                      Address material deterioration and cracks.
+                    </p>
+                  </div>
+
+                  {/* Action 2 */}
+                  <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-amber-700" />
+                        <span className="text-xs font-bold text-slate-900">
+                          Anti-corrosion protection
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                        Medium
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-snug pl-5">
+                      Reduce saline and environmental damage.
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              {/* Data Completeness & Suggested Investigations */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Data Completeness Card */}
-                <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-sm space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Info className="w-4 h-4 text-green-700" />
-                    <h4 className="font-bold text-slate-900 text-sm">
-                      {t('heartbeat.telemetryCompleteness', 'Telemetry Completeness & Missing Fields')}
-                    </h4>
-                  </div>
-                  <div className="space-y-2 text-xs">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-green-700 block mb-1">
-                        {t('heartbeat.verifiedBaseline', 'Verified Baseline Records ({count})', { count: heartbeat?.data_completeness?.verified_fields?.length || 0 })}
-                      </span>
-                      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                        {heartbeat?.data_completeness?.verified_fields?.map((vf, idx) => (
-                          <li key={idx} className="p-2 rounded bg-slate-50 border border-slate-200 text-slate-700 flex items-center gap-1.5 text-[11px]">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0" />
-                            <span>{vf}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+              {/* Functional Record Action Button */}
+              <button
+                type="button"
+                onClick={() => setShowAddForm(true)}
+                className="w-full py-2.5 px-4 rounded-xl bg-[#087F4F] hover:bg-[#06653E] text-white font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-[0.99] mt-2"
+              >
+                <span>Record Action</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                    {heartbeat?.data_completeness?.missing_fields?.length > 0 && (
-                      <div className="pt-2">
-                        <span className="text-[10px] uppercase font-bold text-amber-800 block mb-1">
-                          {t('heartbeat.missingRecords', 'Missing or Uncertified Records')}
-                        </span>
-                        <ul className="space-y-1">
-                          {heartbeat.data_completeness.missing_fields.map((mf, idx) => (
-                            <li key={idx} className="p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 flex items-center gap-1.5 text-[11px]">
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                              <span>{mf}</span>
-                            </li>
-                          ))}
-                        </ul>
+      {/* TAB 2: Detailed Interventions & Verifications (Complete audit ledger & RBAC test compatibility) */}
+      {activeTab === 'inspections' && currentAsset && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                {t('heartbeat.tabInterventions', 'Interventions & Verifications')}
+              </h3>
+              <p className="text-xs text-slate-500">
+                Closed-loop inspection log and certified engineering verifications.
+              </p>
+            </div>
+            {canManage && (
+              <button
+                id="btn-dh-record-inspection"
+                type="button"
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="px-3 py-1.5 rounded-lg bg-[#087F4F] hover:bg-[#06653E] text-white font-semibold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>
+                  {showAddForm
+                    ? t('heartbeat.closeForm', 'Close Form')
+                    : isDemo
+                    ? t('heartbeat.scheduleInspectionDemo', 'Schedule Inspection (Demo)')
+                    : t('heartbeat.recordNewInspection', 'Record New Inspection')}
+                </span>
+              </button>
+            )}
+          </div>
+
+          {inspections.length === 0 ? (
+            <div className="p-8 text-center rounded-xl bg-white border border-slate-200 space-y-2">
+              <ClipboardCheck className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-semibold text-slate-700">No inspections recorded yet</p>
+              <p className="text-[11px] text-slate-400">
+                Record an inspection to initiate closed-loop verification.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {inspections.map((insp) => (
+                <div
+                  key={insp.id}
+                  className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-emerald-700">{insp.id}</span>
+                        <span className="text-xs text-slate-400">&bull;</span>
+                        <span className="font-mono text-xs text-slate-600">{insp.inspection_date}</span>
                       </div>
+                      <h4 className="text-sm font-bold text-slate-900 mt-1">{insp.inspection_type}</h4>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                      {insp.status}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
+                    {insp.findings}
+                  </p>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500">By: {insp.responsible_user || 'Inspection Engineer'}</span>
+                    {canManage && insp.status !== 'Remediation Verified' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerifyingInspId(insp.id);
+                          setVerificationNotes('');
+                          setVerificationActionTaken(insp.actual_action_taken || '');
+                        }}
+                        className="px-3 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs cursor-pointer"
+                      >
+                        Verify Outcome
+                      </button>
                     )}
                   </div>
                 </div>
-
-                {/* Suggested Next Investigations */}
-                <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-green-700" />
-                      <h4 className="font-bold text-slate-900 text-sm">
-                        {t('heartbeat.recommendedInvestigations', 'Recommended Next Investigations')}
-                      </h4>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setActiveTab('inspections');
-                        setShowAddForm(true);
-                      }}
-                      className="px-2.5 py-1 rounded bg-green-700 hover:bg-green-800 text-white font-semibold text-[11px] flex items-center gap-1 shadow-sm"
-                    >
-                      <PlusCircle className="w-3 h-3" />
-                      <span>{t('heartbeat.recordAction', 'Record Action')}</span>
-                    </button>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {heartbeat?.suggested_investigations?.map((inv, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-900 text-xs">
-                            {inv.title}
-                          </span>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-semibold">
-                            {inv.priority}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-600 leading-snug">
-                          {inv.detail}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
           )}
+        </div>
+      )}
 
-          {/* TAB 2: Closed-Loop Inspection Recording & Outcome Verification */}
-          {activeTab === 'inspections' && (
-            <div className="space-y-5">
-              {/* Top Action Header */}
-              <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
+      {/* TAB 3: Asset Timeline View */}
+      {activeTab === 'timeline' && currentAsset && (
+        <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-4">
+          <h3 className="text-sm font-bold text-slate-900">Full Structural Lifecycle Timeline</h3>
+          <div className="relative pl-6 space-y-4 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+            {timeline.map((evt) => (
+              <div key={evt.id} className="relative flex items-start gap-3">
+                <div className="absolute -left-6 top-1 w-3.5 h-3.5 rounded-full bg-emerald-600 ring-4 ring-white" />
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">
-                    {t('heartbeat.closedLoopHeader', 'Closed-Loop Field Actions & Remediation Log')}
-                  </h4>
-                  <p className="text-xs text-slate-500">
-                    {t('heartbeat.closedLoopWorkflow', 'Workflow: Detect • Understand • Prioritise • Intervene • Verify • Learn')}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-slate-900">{evt.date}</span>
+                    <span className="text-xs font-semibold text-emerald-800">{evt.title}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">{evt.description}</p>
                 </div>
-                {canManage && (
-                  <button
-                    id="btn-dh-record-inspection"
-                    onClick={() => setShowAddForm(!showAddForm)}
-                    className={`px-3.5 py-2 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer ${
-                      isDemo
-                        ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
-                        : 'bg-green-700 hover:bg-green-800 text-white'
-                    }`}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Record Action / Add Inspection Modal */}
+      {showAddForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 my-8 relative">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <PlusCircle className="w-5 h-5 text-emerald-700" />
+                <h3 className="text-base font-bold text-slate-900">
+                  {t('heartbeat.recordNewInspection', 'Record New Inspection')}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateInspection} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-700 font-semibold block mb-1">Inspection Date</label>
+                  <input
+                    id="input-insp-date"
+                    type="date"
+                    required
+                    value={formDate}
+                    onChange={(e) => setFormDate(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-700 font-semibold block mb-1">Inspection Type</label>
+                  <select
+                    id="select-insp-type"
+                    value={formType}
+                    onChange={(e) => setFormType(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2"
                   >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>{showAddForm ? t('heartbeat.closeForm', 'Close Form') : isDemo ? t('heartbeat.scheduleInspectionDemo', 'Schedule Inspection (Demo)') : t('heartbeat.recordNewInspection', 'Record New Inspection')}</span>
-                  </button>
-                )}
+                    <option value="Structural Audit">Structural Audit</option>
+                    <option value="Underwater Bathymetry Sonar">Underwater Bathymetry Sonar</option>
+                    <option value="Vibration & Bearing Appraisal">Vibration &amp; Bearing Appraisal</option>
+                    <option value="Emergency Remediation Action">Emergency Remediation Action</option>
+                  </select>
+                </div>
               </div>
 
-              {actionError && (
-                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 flex items-center justify-between text-xs text-red-800">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                    <span>{actionError}</span>
-                  </div>
-                  <button onClick={() => setActionError(null)} className="text-red-600 hover:text-red-800">
-                    &times;
-                  </button>
-                </div>
-              )}
+              <div>
+                <label className="text-slate-700 font-semibold block mb-1">
+                  {t('heartbeat.observedFindings', 'Findings & Defect Observations')} *
+                </label>
+                <textarea
+                  id="textarea-insp-findings"
+                  rows="3"
+                  required
+                  value={formFindings}
+                  onChange={(e) => setFormFindings(e.target.value)}
+                  placeholder={t(
+                    'heartbeat.findingsPlaceholder',
+                    'Document verified anomalies, crack widths, scour depths, sensor discrepancies...'
+                  )}
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2"
+                />
+              </div>
 
-              {actionSuccess && (
-                <div className="p-3.5 rounded-xl bg-green-50 border border-green-200 flex items-center justify-between text-xs text-green-800">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-700 shrink-0" />
-                    <span>{actionSuccess}</span>
-                  </div>
-                  <button onClick={() => setActionSuccess(null)} className="text-green-700 hover:text-green-900">
-                    &times;
-                  </button>
-                </div>
-              )}
+              <div>
+                <label className="text-slate-700 font-semibold block mb-1">Action Taken / Remediation Executed</label>
+                <textarea
+                  id="textarea-insp-actual"
+                  rows="2"
+                  value={formActionTaken}
+                  onChange={(e) => setFormActionTaken(e.target.value)}
+                  placeholder="Details of physical repairs, strengthening, descaling, or grout injection..."
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2"
+                />
+              </div>
 
-              {/* Inspection Form (Admin / Demo Protected) */}
-              {showAddForm && canManage && (
-                <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-lg space-y-4">
-                  <h5 className="text-xs font-bold uppercase tracking-wider text-green-700 flex items-center gap-1.5">
-                    <CheckSquare className="w-4 h-4" />
-                    <span>{t('heartbeat.recordFieldInspectionFor', 'Record Field Inspection for {id}', { id: currentAsset.id })}</span>
-                  </h5>
+              <div>
+                <label className="text-slate-700 font-semibold block mb-1">Evidence Reference / Document</label>
+                <input
+                  id="input-insp-evidence"
+                  type="text"
+                  value={formEvidenceRef}
+                  onChange={(e) => setFormEvidenceRef(e.target.value)}
+                  placeholder="e.g. Sonar_Bathymetry_Report_2024.pdf"
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2 font-mono"
+                />
+              </div>
 
-                  <form onSubmit={handleCreateInspection} className="space-y-3 text-xs">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-slate-700 block mb-1 font-semibold">{t('heartbeat.inspectionDate', 'Inspection Date')}</label>
-                        <input
-                          type="date"
-                          value={formDate}
-                          onChange={(e) => setFormDate(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-900 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-700 block mb-1 font-semibold">{t('heartbeat.inspectionType', 'Inspection / Audit Type')}</label>
-                        <select
-                          value={formType}
-                          onChange={(e) => setFormType(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-900 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500"
-                        >
-                          <option>Structural Audit</option>
-                          <option>Underwater Sonar Bathymetry</option>
-                          <option>Tri-axial Vibration Spectrum</option>
-                          <option>NDT Ultrasonic Crack Depth</option>
-                          <option>Emergency Post-Weather Survey</option>
-                          <option>Routine Maintenance Clearing</option>
-                        </select>
-                      </div>
-                    </div>
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="px-3.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingInsp}
+                  className="px-4 py-2 rounded-lg bg-[#087F4F] hover:bg-[#06653E] text-white font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  {submittingInsp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
+                  <span>{t('heartbeat.saveAndRecalculate', 'Save & Recalculate Risk')}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-                    <div>
-                      <label className="text-slate-700 block mb-1 font-semibold">{t('heartbeat.observedFindings', 'Observed Structural Findings')}</label>
-                      <textarea
-                        rows="2"
-                        value={formFindings}
-                        onChange={(e) => setFormFindings(e.target.value)}
-                        placeholder={t('heartbeat.findingsPlaceholder', 'Document verified anomalies, crack widths, scour depths, sensor discrepancies...')}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500"
-                        required
-                      />
-                    </div>
+      {/* Verification Modal */}
+      {verifyingInspId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 my-8 relative">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-emerald-700" />
+                <h3 className="text-base font-bold text-slate-900">
+                  Verify Inspection: {verifyingInspId}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVerifyingInspId(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-slate-700 block mb-1 font-semibold">{t('heartbeat.recommendedAction', 'Recommended Action')}</label>
-                        <input
-                          type="text"
-                          value={formRecommendedAction}
-                          onChange={(e) => setFormRecommendedAction(e.target.value)}
-                          placeholder="e.g. Boulder dumping, impeller replacement..."
-                          className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-900 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-700 block mb-1 font-semibold">{t('heartbeat.actionTaken', 'Actual Action Taken')}</label>
-                        <input
-                          type="text"
-                          value={formActionTaken}
-                          onChange={(e) => setFormActionTaken(e.target.value)}
-                          placeholder="e.g. Speed limited to 30 km/h, contract issued..."
-                          className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-900 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500"
-                        />
-                      </div>
-                    </div>
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="text-slate-700 font-semibold block mb-1">Verification Outcome</label>
+                <select
+                  value={verificationOutcome}
+                  onChange={(e) => setVerificationOutcome(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2"
+                >
+                  <option value="Remediation Successful">Remediation Successful (Risk Reduction Applied)</option>
+                  <option value="Partially Effective">Partially Effective</option>
+                  <option value="Remediation Failed">Remediation Failed</option>
+                </select>
+              </div>
 
-                    <div>
-                      <label className="text-slate-700 block mb-1 font-semibold">{t('heartbeat.evidenceRef', 'Evidence Reference (PDF / Photos)')}</label>
-                      <input
-                        type="text"
-                        value={formEvidenceRef}
-                        onChange={(e) => setFormEvidenceRef(e.target.value)}
-                        placeholder="e.g. Mandovi_Bridge_Pier_Scour_Audit_2023.pdf, Photo-01.jpg"
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-900 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500"
-                      />
-                    </div>
+              <div>
+                <label className="text-slate-700 font-semibold block mb-1">Actual Action Taken</label>
+                <textarea
+                  rows="2"
+                  value={verificationActionTaken}
+                  onChange={(e) => setVerificationActionTaken(e.target.value)}
+                  placeholder="Confirm exact remediation physical work conducted..."
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2"
+                />
+              </div>
 
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowAddForm(false)}
-                        className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={submittingInsp}
-                        className="px-5 py-2 rounded-lg bg-green-700 hover:bg-green-800 text-white font-semibold flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
-                      >
-                        {submittingInsp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                        <span>{t('heartbeat.saveAndRecalculate', 'Save & Recalculate Risk')}</span>
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
+              <div>
+                <label className="text-slate-700 font-semibold block mb-1">Verification Notes &amp; Certification *</label>
+                <textarea
+                  rows="3"
+                  required
+                  value={verificationNotes}
+                  onChange={(e) => setVerificationNotes(e.target.value)}
+                  placeholder="Certifying engineer notes and field outcome assessment..."
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2"
+                />
+              </div>
 
-              {/* Inspection Records List */}
-              <div className="space-y-3">
-                {inspections.length === 0 ? (
-                  <div className="p-8 text-center bg-white border border-slate-200 rounded-xl space-y-2">
-                    <CheckSquare className="w-8 h-8 text-slate-400 mx-auto" />
-                    <p className="text-xs text-slate-500">{t('heartbeat.noInspectionsLogged', 'No inspection records logged for this asset yet.')}</p>
-                  </div>
-                ) : (
-                  inspections.map((insp) => (
-                    <div
-                      key={insp.id}
-                      className="p-5 rounded-xl bg-white border border-slate-200 shadow-sm space-y-3"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 pb-2.5">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-green-700 uppercase">
-                              {insp.id}
-                            </span>
-                            <span className="text-xs text-slate-500 font-medium">
-                              &bull; {insp.inspection_date}
-                            </span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                insp.status === 'Verified'
-                                  ? 'bg-green-50 text-green-700 border-green-200'
-                                  : insp.status === 'Completed'
-                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                  : insp.status === 'In Progress'
-                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                  : 'bg-slate-100 text-slate-700 border-slate-200'
-                              }`}
-                            >
-                              {insp.status}
-                            </span>
-                          </div>
-                          <h5 className="font-bold text-slate-900 text-sm mt-0.5">
-                            {insp.inspection_type}
-                          </h5>
-                        </div>
-
-                        {/* Status Transition & Verify Buttons (Admin / Demo Protected) */}
-                        {canManage && (
-                          <div className="flex items-center gap-1.5">
-                            {insp.status !== 'Verified' && (
-                              <>
-                                <select
-                                  id={`select-dh-status-${insp.id}`}
-                                  value={insp.status}
-                                  onChange={(e) => handleStatusChange(insp.id, e.target.value)}
-                                  className="bg-white border border-slate-300 text-xs text-slate-800 p-1.5 rounded-lg focus:outline-none"
-                                >
-                                  <option value="Pending">Pending</option>
-                                  <option value="In Progress">In Progress</option>
-                                  <option value="Completed">Completed</option>
-                                </select>
-
-                                <button
-                                  id={`btn-dh-verify-${insp.id}`}
-                                  onClick={() => {
-                                    setVerifyingInspId(insp.id);
-                                    setVerificationActionTaken(insp.actual_action_taken || '');
-                                    setVerificationOutcome('Remediation Successful');
-                                  }}
-                                  className="px-2.5 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white font-semibold text-xs flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
-                                >
-                                  <UserCheck className="w-3 h-3" />
-                                  <span>{t('heartbeat.verifyOutcome', 'Verify Outcome')}</span>
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Findings & Actions */}
-                      <div className="space-y-2 text-xs">
-                        <div>
-                          <span className="text-slate-500 font-bold uppercase text-[10px] block">
-                            {t('heartbeat.observedFindings', 'Observed Findings')}
-                          </span>
-                          <p className="text-slate-800 mt-0.5 leading-relaxed bg-slate-50 p-2.5 rounded border border-slate-200">
-                            {insp.findings}
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                          {insp.recommended_action && (
-                            <div className="p-2.5 rounded bg-green-50/50 border border-green-200 text-green-900">
-                              <span className="font-bold block text-[10px] uppercase text-green-700">
-                                Recommended Action
-                              </span>
-                              <span>{insp.recommended_action}</span>
-                            </div>
-                          )}
-
-                          {insp.actual_action_taken && (
-                            <div className="p-2.5 rounded bg-slate-50 border border-slate-200 text-slate-800">
-                              <span className="font-bold block text-[10px] uppercase text-slate-500">
-                                Actual Action Taken
-                              </span>
-                              <span>{insp.actual_action_taken}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Outcome Verification Banner */}
-                        {insp.status === 'Verified' && (
-                          <div
-                            className={`p-3 rounded-lg text-xs space-y-1 ${
-                              insp.verification_outcome === 'Remediation Successful'
-                                ? 'bg-green-50 border border-green-200 text-green-800'
-                                : insp.verification_outcome === 'Remediation Unsuccessful'
-                                ? 'bg-red-50 border border-red-200 text-red-800'
-                                : 'bg-amber-50 border border-amber-200 text-amber-800'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 font-bold text-[11px]">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>{t('heartbeat.verifiedOn', 'Verified on {date} by {verifier}', { date: insp.verification_date || 'Recent', verifier: insp.verifier_name || 'Inspector' })}</span>
-                              </div>
-                              <span
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                                  insp.verification_outcome === 'Remediation Successful'
-                                    ? 'bg-green-100 text-green-800 border border-green-300'
-                                    : insp.verification_outcome === 'Remediation Unsuccessful'
-                                    ? 'bg-red-100 text-red-800 border border-red-300'
-                                    : 'bg-amber-100 text-amber-800 border border-amber-300'
-                                }`}
-                              >
-                                {insp.verification_outcome || 'Verified'}
-                              </span>
-                            </div>
-                            {insp.verification_notes && (
-                              <p className="text-[11px] text-slate-700 leading-snug">
-                                {insp.verification_notes}
-                              </p>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="pt-2 border-t border-slate-200 text-[10px] text-slate-500 flex items-center justify-between">
-                          <span>{t('heartbeat.signOff', 'Sign-off: {user}', { user: insp.responsible_user || 'Engineering Authority' })}</span>
-                          {insp.evidence_references && (
-                            <span>{t('heartbeat.ref', 'Ref: {ref}', { ref: insp.evidence_references })}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Verification Input Modal / Inline Prompt (Admin / Demo Protected) */}
-                      {verifyingInspId === insp.id && canManage && (
-                        <div className="p-3.5 rounded-xl bg-slate-50 border border-green-500 space-y-3 mt-2 text-slate-900">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-green-700 flex items-center gap-1.5">
-                              <UserCheck className="w-3.5 h-3.5" />
-                              <span>{t('heartbeat.certifyVerification', 'Certify Inspection Verification')}</span>
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              {t('heartbeat.currentStatus', 'Current Status: {status}', { status: insp.status })}
-                            </span>
-                          </div>
-
-                          {insp.status !== 'Completed' ? (
-                            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                              <span>
-                                {t('heartbeat.statusMustBeCompleted', '⚠️ Inspection must reach Completed status before verification.')}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleStatusChange(insp.id, 'Completed')}
-                                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-semibold shrink-0 cursor-pointer"
-                              >
-                                Transition to Completed
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-700 block">
-                                  {t('heartbeat.outcomeDecision', 'Outcome Decision *')}
-                                </label>
-                                <select
-                                  value={verificationOutcome}
-                                  onChange={(e) => setVerificationOutcome(e.target.value)}
-                                  className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-green-600"
-                                >
-                                  <option value="Remediation Successful">
-                                    Remediation Successful (Certify Defect Resolution)
-                                  </option>
-                                  <option value="Remediation Unsuccessful">
-                                    Remediation Unsuccessful (Defect Persists — Maintain Penalty)
-                                  </option>
-                                  <option value="Further Assessment Required">
-                                    Further Assessment Required (Needs NDT/Sonar — Maintain Penalty)
-                                  </option>
-                                </select>
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-700 block">
-                                  {t('heartbeat.documentedActionTaken', 'Documented Intervention / Action Taken')} {verificationOutcome === 'Remediation Successful' && <span className="text-red-600">*</span>}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={verificationActionTaken}
-                                  onChange={(e) => setVerificationActionTaken(e.target.value)}
-                                  placeholder="e.g., Riprap scour armouring placed around pier P3; crack epoxy injected"
-                                  className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-green-600"
-                                />
-                                <span className="text-[10px] text-slate-500">
-                                  {t('heartbeat.actionTakenRequiredNote', "Required when outcome is 'Remediation Successful' to confirm tangible engineering action.")}
-                                </span>
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-700 block">
-                                  {t('heartbeat.verificationNotes', 'Engineering Verification Notes *')}
-                                </label>
-                                <textarea
-                                  rows="2"
-                                  value={verificationNotes}
-                                  onChange={(e) => setVerificationNotes(e.target.value)}
-                                  placeholder={t('heartbeat.verificationNotesPlaceholder', "Enter engineer verification notes (e.g. 'Post-repair sonar confirmed scour hole refilled; vibration amplitude returned below 2.0 mm/s')...")}
-                                  className="w-full bg-white border border-slate-300 rounded p-2 text-xs text-slate-900 focus:outline-none focus:border-green-600"
-                                />
-                              </div>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                <div>
-                                  <label className="text-[10px] text-slate-700 font-semibold block">{t('heartbeat.inspectionDate', 'Verification Date')}</label>
-                                  <input
-                                    type="date"
-                                    value={verificationDate}
-                                    onChange={(e) => setVerificationDate(e.target.value)}
-                                    className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-green-600"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-[10px] text-slate-700 font-semibold block">{t('heartbeat.signingAuthority', 'Signing Authority')}</label>
-                                  <input
-                                    type="text"
-                                    value={verifierName}
-                                    onChange={(e) => setVerifierName(e.target.value)}
-                                    className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:outline-none focus:border-green-600"
-                                  />
-                                </div>
-                              </div>
-                            </>
-                          )}
-
-                          <div className="flex justify-end gap-2 pt-1 border-t border-slate-200">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setVerifyingInspId(null);
-                                setVerificationNotes('');
-                                setVerificationActionTaken('');
-                              }}
-                              className="px-3 py-1 bg-slate-100 text-slate-700 rounded text-xs hover:bg-slate-200 cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                            {insp.status === 'Completed' && (
-                              <button
-                                type="button"
-                                onClick={() => handleVerifySubmit(insp.id)}
-                                disabled={submittingVerify || !verificationNotes.trim()}
-                                className="px-4 py-1 bg-green-700 hover:bg-green-800 disabled:opacity-50 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-sm cursor-pointer"
-                              >
-                                {submittingVerify ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                                <span>{t('heartbeat.certifyAndRecalculate', 'Certify & Recalculate Risk')}</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setVerifyingInspId(null)}
+                  className="px-3.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleVerifySubmit(verifyingInspId)}
+                  disabled={submittingVerify}
+                  className="px-4 py-2 rounded-lg bg-[#087F4F] hover:bg-[#06653E] text-white font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  {submittingVerify ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
+                  <span>Certify Verification</span>
+                </button>
               </div>
             </div>
-          )}
-
-          {/* TAB 3: Unified Lifecycle Timeline */}
-          {activeTab === 'timeline' && (
-            <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <History className="w-4 h-4 text-green-700" />
-                  <span>{t('heartbeat.unifiedTimeline', 'Unified Event Timeline for {id}', { id: currentAsset.id })}</span>
-                </h4>
-                <span className="text-xs font-mono text-slate-500">
-                  {t('heartbeat.recordedLifecycleEvents', '{count} Recorded Lifecycle Events', { count: timeline.length })}
-                </span>
-              </div>
-
-              <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                {timeline.map((event, idx) => (
-                  <div key={idx} className="relative group">
-                    <span
-                      className={`absolute -left-6 top-1 w-3 h-3 rounded-full border-2 border-white ${
-                        event.event_type === 'verification'
-                          ? 'bg-green-600 ring-4 ring-green-100'
-                          : event.event_type === 'intervention'
-                          ? 'bg-emerald-600 ring-4 ring-emerald-100'
-                          : event.event_type === 'commissioning'
-                          ? 'bg-blue-600 ring-4 ring-blue-100'
-                          : 'bg-amber-500 ring-4 ring-amber-100'
-                      }`}
-                    />
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-colors space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-900">
-                          {event.title}
-                        </span>
-                        <span className="font-mono text-[10px] text-slate-500">
-                          {event.date}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 leading-relaxed">
-                        {event.description}
-                      </p>
-                      {event.actor && (
-                        <div className="pt-1 text-[10px] text-slate-500 font-mono">
-                          {t('heartbeat.signed', 'Signed: {actor}', { actor: event.actor })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       )}
     </div>

@@ -23,6 +23,20 @@ export default function GlobalSearch({
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
 
+  const inputRef = useRef(null);
+
+  // Keyboard shortcut Ctrl+K / Cmd+K to focus search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Close dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -80,33 +94,40 @@ export default function GlobalSearch({
   const docResults = results.filter((r) => r.entity_type === 'document');
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-xs sm:max-w-sm md:max-w-md">
+    <div ref={containerRef} className="relative w-full">
       <div className="relative">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <Search className="w-4 h-4 text-[#647775] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => {
             if (results.length > 0) setIsOpen(true);
           }}
-          placeholder="Global Search (assets, defects, documents)..."
-          className="w-full pl-9 pr-8 py-1.5 rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent transition-all shadow-2xs"
+          placeholder="Search for a bridge, dam, school, road, or any infrastructure..."
+          className="w-full pl-9 pr-14 py-2 rounded-xl border border-[#E1EBE7] bg-[#F4F8F7]/70 hover:bg-[#F4F8F7] focus:bg-white text-xs text-[#142B2A] placeholder-[#647775] focus:outline-none focus:ring-2 focus:ring-[#087F4F] focus:border-transparent transition-all shadow-2xs"
         />
-        {loading ? (
-          <Loader2 className="w-3.5 h-3.5 text-green-700 animate-spin absolute right-2.5 top-1/2 -translate-y-1/2" />
-        ) : query ? (
-          <button
-            onClick={() => {
-              setQuery('');
-              setResults([]);
-              setIsOpen(false);
-            }}
-            className="p-1 rounded text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        ) : null}
+        <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+          {loading ? (
+            <Loader2 className="w-3.5 h-3.5 text-[#087F4F] animate-spin" />
+          ) : query ? (
+            <button
+              onClick={() => {
+                setQuery('');
+                setResults([]);
+                setIsOpen(false);
+              }}
+              className="p-1 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium font-mono text-[#647775] bg-white border border-[#E1EBE7] rounded-md shadow-2xs">
+              ⌘ K
+            </kbd>
+          )}
+        </div>
       </div>
 
       {/* Results Dropdown */}

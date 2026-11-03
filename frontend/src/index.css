@@ -5,25 +5,25 @@
 @tailwind utilities;
 
 :root {
-  --app-bg: #F8FAFC;
+  --app-bg: #F4F8F7;
   --app-sidebar: #FFFFFF;
   --app-header: #FFFFFF;
   --app-card: #FFFFFF;
-  --app-secondary: #F1F5F9;
-  --brand-green: #15803D;
-  --brand-green-hover: #166534;
-  --brand-green-light: #DCFCE7;
-  --brand-green-dark: #166534;
-  --text-primary: #0F172A;
-  --text-secondary: #475569;
-  --text-muted: #64748B;
-  --border-theme: #E2E8F0;
+  --app-secondary: #E7F8EF;
+  --brand-green: #087F4F;
+  --brand-green-hover: #075E43;
+  --brand-green-light: #E7F8EF;
+  --brand-green-dark: #075E43;
+  --text-primary: #142B2A;
+  --text-secondary: #647775;
+  --text-muted: #8A9D9A;
+  --border-theme: #E1EBE7;
   --input-bg: #FFFFFF;
-  --input-border: #CBD5E1;
-  --focus-ring: #22C55E;
-  --risk-critical: #DC2626;
-  --risk-warning: #D97706;
-  --status-operational: #15803D;
+  --input-border: #E1EBE7;
+  --focus-ring: #087F4F;
+  --risk-critical: #E54848;
+  --risk-warning: #E9A23B;
+  --status-operational: #169B62;
 }
 
 @layer base {

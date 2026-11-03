@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   X,
@@ -7,24 +7,67 @@ import {
   AlertTriangle,
   Activity,
   ChevronRight,
+  ChevronDown,
+  ChevronLeft,
   Database,
   PlusCircle,
+  Plus,
   Loader2,
   CheckCircle2,
   AlertCircle,
   ClipboardList,
+  Eye,
+  Calendar,
+  Compass,
+  ArrowRight,
+  ShieldAlert,
+  Droplets,
+  Waves,
+  Navigation,
+  Zap,
+  HeartPulse,
+  Building2,
+  Clock,
+  ExternalLink,
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import InspectionHistoryModal from '../components/InspectionHistoryModal';
 import { createAsset } from '../services/api';
 import { createDemoAsset } from '../demo/demoService';
 import { useLanguage } from '../context/LanguageContext';
+import {
+  getAssetHeroImage,
+  getAssetThumbnail as resolveAssetThumbnail,
+} from '../utils/assetImages';
+
+// Helper to determine the appropriate category icon
+function getCategoryIcon(category) {
+  const cat = (category || '').toLowerCase();
+  if (cat.includes('drain')) return <Droplets className="w-3.5 h-3.5 text-sky-600" />;
+  if (cat.includes('bridge')) return <Layers className="w-3.5 h-3.5 text-emerald-600" />;
+  if (cat.includes('high') || cat.includes('flyover') || cat.includes('road'))
+    return <Navigation className="w-3.5 h-3.5 text-teal-600" />;
+  if (cat.includes('water') || cat.includes('wtp'))
+    return <Waves className="w-3.5 h-3.5 text-blue-600" />;
+  if (cat.includes('canal')) return <Waves className="w-3.5 h-3.5 text-cyan-600" />;
+  if (cat.includes('power') || cat.includes('substation'))
+    return <Zap className="w-3.5 h-3.5 text-amber-600" />;
+  if (cat.includes('health') || cat.includes('hospital'))
+    return <HeartPulse className="w-3.5 h-3.5 text-rose-600" />;
+  return <Building2 className="w-3.5 h-3.5 text-slate-600" />;
+}
+
+// Helper to resolve authentic high-resolution infrastructure photography
+function getAssetThumbnail(asset, isHero = false) {
+  if (isHero) return getAssetHeroImage(asset);
+  return resolveAssetThumbnail(asset);
+}
 
 export default function AssetRegistry({
   assets = [],
   categories = [],
-  loading,
-  error,
+  loading = false,
+  error = null,
   selectedAsset,
   onSelectAsset,
   onNavigate,
@@ -36,8 +79,19 @@ export default function AssetRegistry({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
+  const [selectedState, setSelectedState] = useState('All');
 
-  // Registration modal and form state
+  // Currently active asset in the right intelligence panel
+  const [activeAssetId, setActiveAssetId] = useState(selectedAsset?.id || null);
+
+  // Sync external selectedAsset prop
+  useEffect(() => {
+    if (selectedAsset?.id) {
+      setActiveAssetId(selectedAsset.id);
+    }
+  }, [selectedAsset]);
+
+  // Modals & form state
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showInspectionModal, setShowInspectionModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -64,10 +118,94 @@ export default function AssetRegistry({
   };
   const [formData, setFormData] = useState(initialFormState);
 
+  // Filter options derived from data
+  const uniqueCategories = useMemo(() => {
+    const set = new Set(categories.length > 0 ? categories : assets.map((a) => a.category).filter(Boolean));
+    return ['All', ...Array.from(set)];
+  }, [categories, assets]);
+
+  const uniqueStates = useMemo(() => {
+    const set = new Set(assets.map((a) => a.state).filter(Boolean));
+    return ['All', ...Array.from(set)];
+  }, [assets]);
+
+  // Dynamic summary counters calculated from actual backend dataset
+  const totalAssetsCount = assets.length;
+  const criticalCount = useMemo(
+    () => assets.filter((a) => a.status === 'Critical Attention' || a.risk_level === 'Critical').length,
+    [assets]
+  );
+  const inspectionDueCount = useMemo(
+    () =>
+      assets.filter(
+        (a) =>
+          a.status === 'Requires Inspection' ||
+          a.risk_level === 'High' ||
+          a.risk_level === 'Moderate'
+      ).length,
+    [assets]
+  );
+  const operationalCount = useMemo(
+    () => assets.filter((a) => a.status === 'Operational' || a.risk_level === 'Low').length,
+    [assets]
+  );
+
+  // Filtered dataset
+  const filteredAssets = useMemo(() => {
+    return assets.filter((asset) => {
+      const q = searchTerm.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        (asset.name && asset.name.toLowerCase().includes(q)) ||
+        (asset.id && asset.id.toLowerCase().includes(q)) ||
+        (asset.district && asset.district.toLowerCase().includes(q)) ||
+        (asset.state && asset.state.toLowerCase().includes(q)) ||
+        (asset.category && asset.category.toLowerCase().includes(q));
+
+      const matchesCategory =
+        selectedCategory === 'All' || asset.category === selectedCategory;
+
+      const matchesState = selectedState === 'All' || asset.state === selectedState;
+
+      const matchesStatus =
+        selectedStatus === 'All'
+          ? true
+          : selectedStatus === 'Critical Attention' || selectedStatus === 'Critical'
+          ? asset.status === 'Critical Attention' || asset.risk_level === 'Critical'
+          : selectedStatus === 'Requires Inspection' || selectedStatus === 'Inspection Due'
+          ? asset.status === 'Requires Inspection' ||
+            asset.risk_level === 'High' ||
+            asset.risk_level === 'Moderate'
+          : selectedStatus === 'Operational'
+          ? asset.status === 'Operational' || asset.risk_level === 'Low'
+          : asset.status === selectedStatus;
+
+      return matchesSearch && matchesCategory && matchesState && matchesStatus;
+    });
+  }, [assets, searchTerm, selectedCategory, selectedState, selectedStatus]);
+
+  // Determine active asset object strictly from filtered results
+  const activeAsset = useMemo(() => {
+    if (!activeAssetId) return null;
+    return filteredAssets.find((a) => a.id === activeAssetId) || null;
+  }, [activeAssetId, filteredAssets]);
+
+  const hasActiveFilters =
+    searchTerm.trim() !== '' ||
+    selectedCategory !== 'All' ||
+    selectedStatus !== 'All' ||
+    selectedState !== 'All';
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setSelectedCategory('All');
+    setSelectedStatus('All');
+    setSelectedState('All');
+  };
+
   const handleInputChange = (field, value) => {
     setFormData((prev) => {
       const next = { ...prev, [field]: value };
-      // Auto derive risk level when risk_score changes
       if (field === 'risk_score') {
         const num = parseFloat(value);
         if (!Number.isNaN(num)) {
@@ -88,7 +226,6 @@ export default function AssetRegistry({
     setFormError(null);
     setFormSuccess(null);
 
-    // Required fields validation
     const trimmedId = formData.id.trim();
     if (!trimmedId) {
       setFormError(t('registry.errIdRequired', 'Asset ID is required (e.g. ASSET-BRG-010).'));
@@ -119,7 +256,6 @@ export default function AssetRegistry({
       return;
     }
 
-    // Latitude validation
     if (formData.latitude === '' || formData.latitude === null || formData.latitude === undefined) {
       setFormError(t('registry.errLatRequired', 'Latitude coordinate is required.'));
       return;
@@ -130,7 +266,6 @@ export default function AssetRegistry({
       return;
     }
 
-    // Longitude validation
     if (formData.longitude === '' || formData.longitude === null || formData.longitude === undefined) {
       setFormError(t('registry.errLngRequired', 'Longitude coordinate is required.'));
       return;
@@ -141,31 +276,29 @@ export default function AssetRegistry({
       return;
     }
 
-    // Construction year validation (optional, but must be valid if entered)
     let constructionYear = null;
     if (formData.construction_year && formData.construction_year.toString().trim()) {
       constructionYear = parseInt(formData.construction_year, 10);
       if (Number.isNaN(constructionYear) || constructionYear < 1800 || constructionYear > 2100) {
-        setFormError(t('registry.errYearValid', 'Construction year must be a valid 4-digit year between 1800 and 2100.'));
+        setFormError(
+          t('registry.errYearValid', 'Construction year must be a valid 4-digit year between 1800 and 2100.')
+        );
         return;
       }
     }
 
-    // Risk score validation
     const riskScore = formData.risk_score !== '' ? parseFloat(formData.risk_score) : 15.0;
     if (Number.isNaN(riskScore) || riskScore < 0 || riskScore > 100) {
       setFormError(t('registry.errRiskValid', 'Risk score must be a number between 0 and 100.'));
       return;
     }
 
-    // Health index validation
     const healthIndex = formData.health_index !== '' ? parseFloat(formData.health_index) : 85.0;
     if (Number.isNaN(healthIndex) || healthIndex < 0 || healthIndex > 100) {
       setFormError(t('registry.errHealthValid', 'Health index must be a number between 0 and 100.'));
       return;
     }
 
-    // Flagged reasons parsing
     const flags = formData.flagged_reasons
       ? formData.flagged_reasons
           .split(/[\n;,]+/)
@@ -198,7 +331,13 @@ export default function AssetRegistry({
       try {
         await createDemoAsset(payload);
       } catch (err) {
-        setFormError(err.message || t('registry.errDemoDisabled', 'Demo Mode: Asset creation is disabled. Real database mutation requires an authenticated administrator session.'));
+        setFormError(
+          err.message ||
+            t(
+              'registry.errDemoDisabled',
+              'Demo Mode: Asset creation is disabled. Real database mutation requires an authenticated administrator session.'
+            )
+        );
       } finally {
         setSubmitting(false);
       }
@@ -207,19 +346,22 @@ export default function AssetRegistry({
 
     try {
       const createdAsset = await createAsset(payload);
-      setFormSuccess(t('registry.registerSuccess', "Asset '{id}' ({name}) registered successfully!", { id: createdAsset.id, name: createdAsset.name }));
+      setFormSuccess(
+        t('registry.registerSuccess', "Asset '{id}' ({name}) registered successfully!", {
+          id: createdAsset.id,
+          name: createdAsset.name,
+        })
+      );
 
-      // Refresh list using parent reload
       if (typeof onRefresh === 'function') {
         await onRefresh();
       }
 
-      // Automatically select newly registered asset
+      setActiveAssetId(createdAsset.id);
       if (typeof onSelectAsset === 'function') {
         onSelectAsset(createdAsset);
       }
 
-      // Auto close modal after user feedback
       setTimeout(() => {
         setFormData(initialFormState);
         setShowRegisterModal(false);
@@ -228,7 +370,13 @@ export default function AssetRegistry({
     } catch (err) {
       console.error('Registration failed:', err);
       if (err.status === 409) {
-        setFormError(t('registry.errConflict409', "Asset ID '{id}' already exists in registry (HTTP 409 Conflict). Please choose a unique Asset ID.", { id: trimmedId }));
+        setFormError(
+          t(
+            'registry.errConflict409',
+            "Asset ID '{id}' already exists in registry (HTTP 409 Conflict). Please choose a unique Asset ID.",
+            { id: trimmedId }
+          )
+        );
       } else if (err.status === 422) {
         setFormError(t('registry.errValidation422', 'Validation error (HTTP 422): {message}', { message: err.message }));
       } else {
@@ -239,296 +387,397 @@ export default function AssetRegistry({
     }
   };
 
-  // Filter assets locally based on user controls
-  const filteredAssets = assets.filter((asset) => {
-    const matchesSearch =
-      searchTerm.trim() === '' ||
-      asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      asset.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      asset.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      asset.state.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesCategory =
-      selectedCategory === 'All' || asset.category === selectedCategory;
-
-    const matchesStatus =
-      selectedStatus === 'All' || asset.status === selectedStatus;
-
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
-
-  const uniqueCategories = ['All', ...new Set(categories.length > 0 ? categories : assets.map((a) => a.category))];
-  const statusOptions = ['All', 'Critical Attention', 'Requires Inspection', 'Operational'];
-
-  const resetFilters = () => {
-    setSearchTerm('');
-    setSelectedCategory('All');
-    setSelectedStatus('All');
-  };
-
-    return (
-    <div className="space-y-5">
+  return (
+    <div className="space-y-4 pb-8 flex flex-col">
       {/* Demo Mode Notice Banner */}
       {isDemo && (
         <div
           data-testid="demo-registry-banner"
-          className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs text-amber-900"
+          className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs text-amber-900 shadow-2xs"
         >
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-bold uppercase tracking-wider text-[10px]">
               {t('registry.demoRegistryBadge', 'Demo Registry')}
             </span>
             <span>
-              {t('registry.demoRegistryNotice', 'Simulated Asset Registry: displaying 3 synthetic demonstration assets. New registrations and record modifications are isolated from backend.')}
+              {t(
+                'registry.demoRegistryNotice',
+                'Simulated Asset Registry: displaying 3 synthetic demonstration assets. New registrations and record modifications are isolated from backend.'
+              )}
             </span>
           </div>
         </div>
       )}
 
-      {/* Search and Filters Bar */}
-      <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        <div className="flex-1 relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={t('registry.searchPlaceholder', 'Search by asset code, name, district, or state...')}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+      {/* 1. Header Section */}
+      <div className="space-y-1">
+        <h1 className="text-xl sm:text-2xl font-black text-[#142B2A] tracking-tight">
+          Asset Registry
+        </h1>
+        <p className="text-xs text-slate-500">
+          Central registry of infrastructure assets with risk, status, and inspection insights.
+        </p>
+      </div>
+
+      {/* 2. Four Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        {/* Card 1: Total Assets */}
+        <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs flex items-center gap-3 transition-shadow hover:shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center justify-center shrink-0">
+            <Layers className="w-5 h-5 text-emerald-700 stroke-[2.2]" />
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+              {totalAssetsCount}
+            </div>
+            <div className="text-xs text-slate-500 font-medium mt-0.5">Total Assets</div>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Category Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5">
-            <span className="text-[11px] text-slate-500 font-medium">{t('registry.filterType', 'Type:')}</span>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-transparent text-xs text-slate-800 focus:outline-none cursor-pointer"
-            >
-              {uniqueCategories.map((c) => (
-                <option key={c} value={c} className="bg-white text-slate-900">
-                  {c === 'All' ? t('common.all', 'All') : c}
-                </option>
-              ))}
-            </select>
+        {/* Card 2: Critical Attention */}
+        <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs flex items-center gap-3 transition-shadow hover:shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 border border-red-200/80 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-5 h-5 text-red-600 stroke-[2.2]" />
           </div>
-
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5">
-            <span className="text-[11px] text-slate-500 font-medium">{t('registry.filterStatus', 'Status:')}</span>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="bg-transparent text-xs text-slate-800 focus:outline-none cursor-pointer"
-            >
-              {statusOptions.map((st) => (
-                <option key={st} value={st} className="bg-white text-slate-900">
-                  {st === 'All'
-                    ? t('common.all', 'All')
-                    : st === 'Critical Attention'
-                    ? t('status.criticalAttention', 'Critical Attention')
-                    : st === 'Requires Inspection'
-                    ? t('status.requiresInspection', 'Requires Inspection')
-                    : st === 'Operational'
-                    ? t('status.operational', 'Operational')
-                    : st}
-                </option>
-              ))}
-            </select>
+          <div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+              {criticalCount}
+            </div>
+            <div className="text-xs text-slate-500 font-medium mt-0.5">Critical Attention</div>
           </div>
+        </div>
 
-          {(searchTerm || selectedCategory !== 'All' || selectedStatus !== 'All') && (
-            <button
-              onClick={resetFilters}
-              className="px-2.5 py-1.5 text-xs text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-300 transition-colors"
-            >
-              {t('registry.resetFilters', 'Reset')}
-            </button>
-          )}
+        {/* Card 3: Inspection Due */}
+        <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs flex items-center gap-3 transition-shadow hover:shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 border border-amber-200/80 flex items-center justify-center shrink-0">
+            <Clock className="w-5 h-5 text-amber-700 stroke-[2.2]" />
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+              {inspectionDueCount}
+            </div>
+            <div className="text-xs text-slate-500 font-medium mt-0.5">Inspection Due</div>
+          </div>
+        </div>
+
+        {/* Card 4: Operational */}
+        <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs flex items-center gap-3 transition-shadow hover:shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-emerald-700 stroke-[2.2]" />
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+              {operationalCount}
+            </div>
+            <div className="text-xs text-slate-500 font-medium mt-0.5">Operational</div>
+          </div>
         </div>
       </div>
 
-      {/* Main Container: Table + Optional Detail Drawer */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Assets Table (Left side) */}
-        <div className={`${selectedAsset ? 'lg:col-span-7 xl:col-span-8' : 'lg:col-span-12'} rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden`}>
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-green-700" />
-              <h3 className="text-sm font-bold text-slate-900">
-                {t('registry.publicRegistryTitle', 'Public Infrastructure Registry')}
-              </h3>
-              <span className="text-xs font-mono text-green-700 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 font-semibold">
-                {t('registry.assetCountRatio', '{filtered} of {total}', { filtered: filteredAssets.length, total: assets.length })}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-slate-500 italic hidden sm:inline">
-                {t('registry.clickRowHint', 'Click any row to inspect full telemetry')}
-              </span>
-              {(isAdmin || isDemo) && (
-                <button
-                  id="btn-register-asset-open"
-                  onClick={() => {
-                    setFormError(null);
-                    setFormSuccess(null);
-                    setShowRegisterModal(true);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer ${
-                    isDemo
-                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
-                      : 'bg-green-700 hover:bg-green-800 text-white'
-                  }`}
-                  title={isDemo ? t('registry.registerDemoTooltip', 'Asset registration is simulated and protected in demo mode') : t('registry.registerTooltip', 'Register a new asset')}
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>{isDemo ? t('registry.registerAssetDemo', 'Register Asset (Demo)') : t('registry.registerAsset', 'Register Asset')}</span>
-                </button>
-              )}
-            </div>
+      {/* 3. Search and Filters Bar */}
+      <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+          {/* Search Input */}
+          <div className="relative flex-1 sm:w-64 min-w-[200px]">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={t('registry.searchPlaceholder', 'Search by asset code, name, or location...')}
+              className="w-full pl-9 pr-7 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                title="Clear search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
 
+          {/* Category Dropdown */}
+          <div className="relative">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg pl-3 pr-8 py-2 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 cursor-pointer appearance-none transition-colors"
+            >
+              {uniqueCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c === 'All' ? 'All Categories' : c}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Status Dropdown */}
+          <div className="relative">
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg pl-3 pr-8 py-2 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 cursor-pointer appearance-none transition-colors"
+            >
+              <option value="All">All Status</option>
+              <option value="Critical Attention">Critical Attention</option>
+              <option value="Requires Inspection">Inspection Due</option>
+              <option value="Operational">Operational</option>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* State Dropdown */}
+          <div className="relative">
+            <select
+              value={selectedState}
+              onChange={(e) => setSelectedState(e.target.value)}
+              className="text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg pl-3 pr-8 py-2 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 cursor-pointer appearance-none transition-colors"
+            >
+              {uniqueStates.map((s) => (
+                <option key={s} value={s}>
+                  {s === 'All' ? 'All States' : s}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Clear Filters Action */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="text-xs text-slate-500 hover:text-slate-800 underline px-1 py-1 cursor-pointer flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              <span>Clear</span>
+            </button>
+          )}
+        </div>
+
+        {/* Add Asset Button (Visible for Admins & Demo) */}
+        {(isAdmin || isDemo) && (
+          <button
+            id="btn-register-asset-open"
+            type="button"
+            onClick={() => {
+              setFormError(null);
+              setFormSuccess(null);
+              setShowRegisterModal(true);
+            }}
+            className="px-3.5 py-2 rounded-lg font-semibold text-xs transition-all flex items-center gap-1.5 shadow-2xs bg-[#087F4F] hover:bg-[#06653E] text-white cursor-pointer active:scale-95"
+            title={
+              isDemo
+                ? t('registry.registerDemoTooltip', 'Asset registration is simulated and protected in demo mode')
+                : t('registry.registerTooltip', 'Register a new asset')
+            }
+          >
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>
+              {isDemo ? t('registry.registerAssetDemo', 'Register Asset (Demo)') : t('registry.registerAsset', 'Add Asset')}
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* 4. Main Workspace Split: Table (~68%) + Asset Intelligence Panel (~32%) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        {/* Main Asset Registry Table Container */}
+        <div className="lg:col-span-8 rounded-xl bg-white border border-slate-200/90 shadow-2xs overflow-hidden flex flex-col">
+          {/* Table Header Row */}
+          <div className="p-3.5 sm:p-4 border-b border-slate-200/90 flex items-center justify-between bg-white">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-[#087F4F]" />
+              <h2 className="text-sm sm:text-base font-bold text-[#142B2A]">
+                <span>{t('registry.publicRegistryTitle', 'Registered Assets')}</span>
+                <span className="ml-1 text-emerald-700 font-semibold">({filteredAssets.length})</span>
+              </h2>
+            </div>
+            <span className="text-[11px] text-slate-400 hidden sm:inline">
+              Select row to preview intelligence
+            </span>
+          </div>
+
+          {/* Table Body */}
           {loading ? (
             <div className="p-12 text-center space-y-3">
-              <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-xs text-slate-500">{t('registry.loadingSQLite', 'Loading asset records from SQLite database...')}</p>
+              <div className="w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-slate-500">
+                {t('registry.loadingSQLite', 'Loading asset records from SQLite database...')}
+              </p>
             </div>
           ) : error ? (
             <div className="p-12 text-center space-y-2">
-              <p className="text-sm text-red-600 font-semibold">{t('registry.errorRetrieving', 'Error retrieving assets')}</p>
+              <p className="text-sm text-red-600 font-semibold">
+                {t('registry.errorRetrieving', 'Error retrieving assets')}
+              </p>
               <p className="text-xs text-slate-500 font-mono">{error}</p>
             </div>
           ) : filteredAssets.length === 0 ? (
             <div className="p-12 text-center space-y-3">
               <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
-              <p className="text-sm font-semibold text-slate-800">{t('registry.noMatchingAssets', 'No matching assets found')}</p>
+              <p className="text-sm font-semibold text-slate-800">
+                {t('registry.noMatchingAssets', 'No matching assets found')}
+              </p>
               <p className="text-xs text-slate-500">
                 {t('registry.tryAdjustingFilters', 'Try adjusting your search criteria or reset filters.')}
               </p>
               <button
+                type="button"
                 onClick={resetFilters}
-                className="mt-2 px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-green-700 rounded-md font-medium border border-slate-300"
+                className="mt-2 px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-emerald-700 rounded-md font-medium border border-slate-300 cursor-pointer"
               >
                 {t('registry.clearAllFilters', 'Clear all filters')}
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
-              <table className="w-full text-left border-collapse text-xs block md:table">
-                <thead className="hidden md:table-header-group">
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-4">{t('registry.assetId', 'Asset ID')}</th>
-                    <th className="py-3 px-4">{t('dashboard.assetName', 'Asset Name')}</th>
-                    <th className="py-3 px-4">{t('common.category', 'Category')}</th>
-                    <th className="py-3 px-4">{t('registry.districtAndState', 'District & State')}</th>
-                    <th className="py-3 px-4">{t('registry.built', 'Built')}</th>
-                    <th className="py-3 px-4">{t('common.status', 'Status')}</th>
-                    <th className="py-3 px-4">{t('registry.risk', 'Risk')}</th>
-                    <th className="py-3 px-4 text-right">{t('registry.view', 'View')}</th>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50/70 border-b border-slate-200/90 text-slate-500 font-medium">
+                    <th className="py-2.5 px-3 w-8 text-center">#</th>
+                    <th className="py-2.5 px-3 min-w-[200px]">Asset Name &amp; Code</th>
+                    <th className="py-2.5 px-3 min-w-[120px]">Category</th>
+                    <th className="py-2.5 px-3 min-w-[130px]">Location</th>
+                    <th className="py-2.5 px-3 min-w-[100px]">Risk Score</th>
+                    <th className="py-2.5 px-3 min-w-[110px]">Status</th>
+                    <th className="py-2.5 px-3 w-12 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 block md:table-row-group space-y-3 md:space-y-0 p-2 md:p-0">
-                  {filteredAssets.map((asset) => {
-                    const isSelected = selectedAsset?.id === asset.id;
+                <tbody className="divide-y divide-slate-100 font-sans">
+                  {filteredAssets.map((asset, index) => {
+                    const isSelected = activeAsset?.id === asset.id;
+                    const score = typeof asset.risk_score === 'number' ? asset.risk_score : 0;
                     return (
                       <tr
                         key={asset.id}
-                        onClick={() => onSelectAsset(asset)}
-                        className={`cursor-pointer transition-colors block md:table-row p-4 md:p-0 rounded-xl md:rounded-none border border-slate-200 md:border-0 ${
+                        onClick={() => setActiveAssetId(asset.id)}
+                        className={`cursor-pointer transition-colors ${
                           isSelected
-                            ? 'bg-green-50/70 border-l-4 md:border-l-2 border-l-green-700'
-                            : 'bg-white md:bg-transparent hover:bg-slate-50'
+                            ? 'bg-emerald-50/60 hover:bg-emerald-50/80'
+                            : 'hover:bg-slate-50/80'
                         }`}
                       >
-                        <td className="py-1.5 md:py-3 px-1 md:px-4 block md:table-cell">
-                          <div className="flex items-center justify-between md:block gap-2">
-                            <span className="font-mono font-medium text-green-800 md:text-slate-600 text-xs">
-                              {asset.id}
-                            </span>
-                            <div className="md:hidden shrink-0">
-                              <StatusBadge status={asset.status} size="xs" />
-                            </div>
-                          </div>
+                        {/* Serial Number */}
+                        <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
+                          {index + 1}
                         </td>
-                        <td className="py-1 md:py-3 px-1 md:px-4 block md:table-cell">
-                          <span className="font-bold text-slate-900 hover:text-green-700 transition-colors text-sm md:text-xs">
-                            {asset.name}
-                          </span>
-                        </td>
-                        <td className="py-1 md:py-3 px-1 md:px-4 block md:table-cell text-slate-600">
-                          <div className="flex items-center justify-between md:block">
-                            <span className="text-[11px] font-semibold text-slate-500 uppercase md:hidden">{t('common.category', 'Category')}:</span>
-                            <span className="font-medium text-slate-700">{asset.category}</span>
-                          </div>
-                        </td>
-                        <td className="py-1 md:py-3 px-1 md:px-4 block md:table-cell text-slate-600">
-                          <div className="flex items-center justify-between md:block">
-                            <span className="text-[11px] font-semibold text-slate-500 uppercase md:hidden">{t('registry.districtAndState', 'District & State')}:</span>
-                            <div className="flex items-center gap-1">
-                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 md:hidden" />
-                              <span>{asset.district}, {asset.state}</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-1 md:py-3 px-1 md:px-4 block md:table-cell font-mono text-slate-600">
-                          <div className="flex items-center justify-between md:block">
-                            <span className="text-[11px] font-semibold text-slate-500 uppercase font-sans md:hidden">{t('registry.built', 'Built')}:</span>
-                            <span>{asset.construction_year || '—'}</span>
-                          </div>
-                        </td>
-                        <td className="py-1.5 md:py-3 px-1 md:px-4 hidden md:table-cell">
-                          <StatusBadge status={asset.status} size="xs" />
-                        </td>
-                        <td className="py-1 md:py-3 px-1 md:px-4 block md:table-cell font-mono font-semibold">
-                          <div className="flex items-center justify-between md:justify-start gap-2">
-                            <span className="text-[11px] font-semibold text-slate-500 uppercase font-sans md:hidden">{t('registry.risk', 'Risk')}:</span>
-                            <span
-                              className={
-                                asset.risk_score >= 80
-                                  ? 'text-red-700'
-                                  : asset.risk_score >= 50
-                                  ? 'text-amber-700'
-                                  : 'text-green-700'
-                              }
-                            >
-                              {asset.risk_score} / 100
-                            </span>
-                          </div>
-                        </td>
-                        <td className="pt-2 md:py-3 px-1 md:px-4 block md:table-cell text-right border-t border-slate-200 md:border-t-0 mt-2 md:mt-0">
-                          <div className="flex items-center justify-between md:justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onSelectAsset(asset);
-                                setShowInspectionModal(true);
-                              }}
-                              className="px-2.5 py-1.5 md:p-1 rounded-lg md:rounded text-slate-600 md:text-slate-500 hover:text-green-700 bg-slate-100 md:bg-transparent hover:bg-slate-100 transition-colors flex items-center gap-1.5 text-xs md:text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-                              title={t('registry.viewRecordInspections', 'View & Record Inspections')}
-                            >
-                              <ClipboardList className="w-3.5 h-3.5 md:w-4 md:h-4 text-green-700" />
-                              <span className="md:hidden">{t('registry.viewRecordInspections', 'View & Record Inspections')}</span>
-                            </button>
-                            <span className="text-xs text-green-700 md:text-slate-500 flex items-center gap-1 font-medium md:font-normal">
-                              <span className="md:hidden">{isSelected ? t('common.selected', 'Selected') : t('registry.viewDetails', 'Details')}</span>
-                              <ChevronRight
-                                className={`w-4 h-4 inline-block transition-transform ${
-                                  isSelected ? 'text-green-700 translate-x-1' : 'text-slate-400'
-                                }`}
+
+                        {/* Asset Name & Code */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80 shadow-2xs">
+                              <img
+                                src={getAssetThumbnail(asset)}
+                                alt={asset.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = mandoviBridgeThumbnail;
+                                }}
                               />
-                            </span>
+                            </div>
+                            <div className="min-w-0 pr-2">
+                              <div className="font-bold text-slate-900 leading-snug line-clamp-1 hover:text-[#087F4F] transition-colors">
+                                {asset.name}
+                              </div>
+                              <div className="font-mono text-[10px] text-slate-400 tracking-wider">
+                                {asset.id}
+                              </div>
+                            </div>
                           </div>
+                        </td>
+
+                        {/* Category */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-1.5 text-slate-700 font-medium">
+                            <div className="p-1 rounded bg-slate-50 border border-slate-200/70 shrink-0">
+                              {getCategoryIcon(asset.category)}
+                            </div>
+                            <span className="truncate">{asset.category}</span>
+                          </div>
+                        </td>
+
+                        {/* Location */}
+                        <td className="py-3 px-3">
+                          <div className="text-slate-700 leading-snug">
+                            <div className="font-medium truncate">{asset.district}</div>
+                            <div className="text-[11px] text-slate-400 truncate">{asset.state}</div>
+                          </div>
+                        </td>
+
+                        {/* Risk Score */}
+                        <td className="py-3 px-3">
+                          <div className="space-y-1">
+                            <div
+                              className={`font-mono font-bold text-xs ${
+                                score >= 80
+                                  ? 'text-red-700'
+                                  : score >= 50
+                                  ? 'text-amber-700'
+                                  : 'text-emerald-700'
+                              }`}
+                            >
+                              {score.toFixed(1)}
+                            </div>
+                            <div className="w-14 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  score >= 80
+                                    ? 'bg-[#E54848]'
+                                    : score >= 50
+                                    ? 'bg-[#E9A23B]'
+                                    : 'bg-[#169B62]'
+                                }`}
+                                style={{
+                                  width: `${Math.min(100, Math.max(8, score))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-3 px-3">
+                          {asset.status === 'Critical Attention' || asset.risk_level === 'Critical' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200/80">
+                              <span className="text-[10px]">▲</span>
+                              <span>Critical</span>
+                            </span>
+                          ) : asset.status === 'Requires Inspection' ||
+                            asset.risk_level === 'High' ||
+                            asset.risk_level === 'Moderate' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
+                              <span>Inspection Due</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/80">
+                              <span className="text-[9px]">●</span>
+                              <span>Operational</span>
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Action */}
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveAssetId(asset.id);
+                              if (typeof onSelectAsset === 'function') {
+                                onSelectAsset(asset);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
+                            title="View Asset Details"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -537,183 +786,256 @@ export default function AssetRegistry({
               </table>
             </div>
           )}
-        </div>
 
-        {/* Selected Asset Detail Inspector Drawer (Right side) */}
-        {selectedAsset && (
-          <div className="lg:col-span-5 xl:col-span-4 rounded-xl bg-white border border-slate-200 shadow-sm p-5 space-y-4 sticky top-6">
-            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
-              <div>
-                <span className="text-[11px] font-mono text-green-700 font-semibold uppercase">
-                  {selectedAsset.id}
+          {/* Table Footer with Pagination Controls */}
+          <div className="p-3 border-t border-slate-200/90 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 bg-white">
+            <div>
+              Showing 1–{filteredAssets.length} of {filteredAssets.length} assets
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span>Rows per page:</span>
+                <span className="font-semibold text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50">
+                  10
                 </span>
-                <h4 className="text-base font-bold text-slate-900 mt-0.5">
-                  {selectedAsset.name}
-                </h4>
               </div>
-              <button
-                onClick={() => onSelectAsset(null)}
-                className="text-slate-400 hover:text-slate-700 p-1 rounded-md hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Quick Badges */}
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge status={selectedAsset.status} />
-              <span className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                {selectedAsset.category}
-              </span>
-            </div>
-
-            {/* Core Fields Grid */}
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('registry.districtAndState', 'District & State')}</span>
-                  <span className="font-semibold text-slate-800">
-                    {selectedAsset.district}, {selectedAsset.state}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('registry.constructionYear', 'Construction Year')}</span>
-                  <span className="font-semibold text-slate-800 font-mono">
-                    {selectedAsset.construction_year || t('registry.unknown', 'Unknown')}
-                  </span>
-                </div>
-                <div className="mt-2">
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('registry.gpsCoordinates', 'GPS Coordinates')}</span>
-                  <span className="font-mono text-slate-800 text-[11px]">
-                    {selectedAsset.latitude.toFixed(4)}°N, {selectedAsset.longitude.toFixed(4)}°E
-                  </span>
-                </div>
-                <div className="mt-2">
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">{t('common.lastInspection', 'Last Inspection')}</span>
-                  <span className="font-semibold text-slate-800 font-mono">
-                    {selectedAsset.last_inspection_date || t('registry.noneOnRecord', 'None on record')}
-                  </span>
-                </div>
-              </div>
-
-              {/* Digital Heartbeat Telemetry Snapshot */}
-              <div className="p-3 rounded-lg bg-green-50/50 border border-green-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Activity className="w-3.5 h-3.5 text-green-700" />
-                    <span className="font-bold text-green-900 text-xs">{t('registry.heartbeatSnapshot', 'Digital Heartbeat Snapshot')}</span>
-                  </div>
-                  <span className="font-mono text-xs font-bold text-slate-900">
-                    {t('registry.scoreLabel', 'Score: {score} / 100', { score: selectedAsset.risk_score })}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-                  <div>
-                    <span className="text-slate-500 block">{t('common.healthIndex', 'Health Index')}</span>
-                    <span className="font-bold text-green-700 text-sm font-mono">
-                      {selectedAsset.health_index}%
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">{t('registry.riskTier', 'Risk Tier')}</span>
-                    <span className={`font-bold text-sm ${
-                      selectedAsset.risk_level === 'Critical' ? 'text-red-700' : selectedAsset.risk_level === 'High' ? 'text-amber-700' : 'text-green-700'
-                    }`}>
-                      {selectedAsset.risk_level}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Identified Risk Factors / Flagged Triggers */}
-              {selectedAsset.flagged_reasons && selectedAsset.flagged_reasons.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="text-slate-500 font-semibold uppercase text-[10px] block">
-                    {t('registry.flaggedRiskTriggers', 'Flagged Risk Triggers')}
-                  </span>
-                  <ul className="space-y-1">
-                    {selectedAsset.flagged_reasons.map((reason, idx) => (
-                      <li
-                        key={idx}
-                        className="p-2 rounded bg-red-50 border border-red-200 text-[11px] text-red-800 flex items-start gap-1.5"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-600 mt-1 shrink-0" />
-                        <span>{reason}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Description */}
-              {selectedAsset.description && (
-                <div className="space-y-1">
-                  <span className="text-slate-500 font-semibold uppercase text-[10px] block">
-                    {t('registry.engineeringContext', 'Engineering Context')}
-                  </span>
-                  <p className="text-slate-700 text-xs leading-relaxed bg-slate-50 p-2.5 rounded border border-slate-200">
-                    {selectedAsset.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Data Source Disclaimer */}
-              <div className="p-2 rounded bg-slate-50 border border-slate-200 text-[10px] text-slate-500 flex items-start gap-1.5">
-                <Database className="w-3 h-3 text-green-700 shrink-0 mt-0.5" />
-                <span>{t('registry.sourcePrefix', 'Source: {source}', { source: selectedAsset.data_source })}</span>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="pt-2 flex flex-col gap-2">
-              <button
-                id="btn-open-inspections"
-                type="button"
-                onClick={() => setShowInspectionModal(true)}
-                className="w-full py-2.5 rounded-lg bg-green-700 hover:bg-green-800 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
-              >
-                <ClipboardList className="w-4 h-4" />
-                <span>{t('registry.inspectionHistoryAndVerification', 'Inspection History & Verification')}</span>
-              </button>
-
-              <div className="flex gap-2">
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={() => onNavigate('heartbeat')}
-                  className="flex-1 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs border border-slate-300 transition-colors flex items-center justify-center gap-1.5"
+                  type="button"
+                  disabled
+                  className="p-1 rounded text-slate-300 border border-slate-200 bg-slate-50 cursor-not-allowed"
                 >
-                  <Activity className="w-3.5 h-3.5 text-green-700" />
-                  <span>{t('registry.openFullHeartbeat', 'Open Full Heartbeat')}</span>
+                  <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
+                <span className="px-2 py-0.5 rounded font-bold text-xs bg-[#087F4F] text-white">
+                  1
+                </span>
                 <button
-                  onClick={() => onNavigate('map')}
-                  className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs border border-slate-300 transition-colors flex items-center gap-1.5"
-                  title={t('registry.locateOnMapTooltip', 'Locate on GIS Map')}
+                  type="button"
+                  disabled
+                  className="p-1 rounded text-slate-300 border border-slate-200 bg-slate-50 cursor-not-allowed"
                 >
-                  <MapPin className="w-3.5 h-3.5 text-green-700" />
-                  <span>{t('registry.map', 'Map')}</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+
+        {/* 5. Right-Side Selected Asset Intelligence Panel */}
+        <div className="lg:col-span-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs p-4 sm:p-5 space-y-4">
+          {activeAsset ? (
+            <>
+              {/* High-quality Infrastructure Image */}
+              <div className="relative aspect-video rounded-xl overflow-hidden bg-slate-100 border border-slate-200/80 shadow-2xs group">
+                <img
+                  src={getAssetThumbnail(activeAsset, true)}
+                  alt={activeAsset.name}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = mandoviBridgeThumbnail;
+                  }}
+                />
+                <div className="absolute top-2.5 right-2.5">
+                  <StatusBadge status={activeAsset.status} size="xs" />
+                </div>
+              </div>
+
+              {/* Title & Asset ID */}
+              <div className="space-y-0.5">
+                <h3 className="font-bold text-[#142B2A] text-base sm:text-lg leading-snug">
+                  {activeAsset.name}
+                </h3>
+                <div className="font-mono text-xs text-slate-400 font-medium">
+                  {activeAsset.id}
+                </div>
+              </div>
+
+              {/* Badges Row */}
+              <div className="flex flex-wrap items-center gap-2">
+                {activeAsset.status === 'Critical Attention' || activeAsset.risk_level === 'Critical' ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200/80">
+                    <span className="text-[10px]">▲</span>
+                    <span>Critical Attention</span>
+                  </span>
+                ) : activeAsset.status === 'Requires Inspection' ||
+                  activeAsset.risk_level === 'High' ||
+                  activeAsset.risk_level === 'Moderate' ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
+                    <span>Inspection Due</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/80">
+                    <span className="text-[9px]">●</span>
+                    <span>Operational</span>
+                  </span>
+                )}
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                  {activeAsset.category}
+                </span>
+              </div>
+
+              {/* Detailed Attributes List */}
+              <div className="space-y-2.5 text-xs text-slate-600 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-slate-400 shrink-0">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Location</span>
+                  </span>
+                  <span className="font-medium text-slate-800 text-right truncate">
+                    {activeAsset.district}, {activeAsset.state}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-slate-400 shrink-0">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Construction Year</span>
+                  </span>
+                  <span className="font-mono font-medium text-slate-800">
+                    {activeAsset.construction_year || 'Unknown'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-slate-400 shrink-0">
+                    <Compass className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>GPS Coordinates</span>
+                  </span>
+                  <span className="font-mono text-slate-800 text-[11px]">
+                    {typeof activeAsset.latitude === 'number' && typeof activeAsset.longitude === 'number'
+                      ? `${activeAsset.latitude.toFixed(4)}°N, ${activeAsset.longitude.toFixed(4)}°E`
+                      : 'Not available'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-slate-400 shrink-0">
+                    <ClipboardList className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Last Inspection</span>
+                  </span>
+                  <span className="font-mono font-medium text-slate-800">
+                    {activeAsset.last_inspection_date || 'None on record'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Digital Heartbeat Snapshot Box */}
+              <div className="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-[#142B2A]">
+                    <Activity className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>{t('registry.heartbeatSnapshot', 'Digital Heartbeat Snapshot')}</span>
+                  </div>
+                  <span className="text-[11px] font-mono font-semibold text-slate-500">
+                    {t('registry.scoreLabel', 'Score: {score} / 100', { score: activeAsset.risk_score })}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <div className="text-[11px] text-slate-500 font-medium">Health Index</div>
+                    <div className="text-sm font-black font-mono text-emerald-700 mt-0.5">
+                      {activeAsset.health_index}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-slate-500 font-medium">Risk Tier</div>
+                    <div
+                      className={`text-sm font-black mt-0.5 ${
+                        activeAsset.risk_level === 'Critical'
+                          ? 'text-red-700'
+                          : activeAsset.risk_level === 'High'
+                          ? 'text-amber-700'
+                          : 'text-emerald-700'
+                      }`}
+                    >
+                      {activeAsset.risk_level}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Primary Action Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof onSelectAsset === 'function') {
+                    onSelectAsset(activeAsset);
+                  }
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-[#087F4F] hover:bg-[#06653E] text-white font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-[0.99]"
+              >
+                <span>View Full Asset Intelligence</span>
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </button>
+
+              {/* Secondary Navigation Actions (Preserved for tests & deep workflows) */}
+              <div className="pt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-open-inspections"
+                  onClick={() => setShowInspectionModal(true)}
+                  className="flex-1 py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-[11px] border border-slate-200 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                  title={t('registry.viewRecordInspections', 'View & Record Inspections')}
+                >
+                  <ClipboardList className="w-3 h-3 text-emerald-700" />
+                  <span>{t('registry.inspectionHistoryAndVerification', 'Inspection History & Verification')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate && onNavigate('heartbeat')}
+                  className="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-[11px] border border-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
+                  title={t('registry.openFullHeartbeat', 'Open Full Heartbeat')}
+                >
+                  <Activity className="w-3 h-3 text-emerald-700" />
+                  <span className="hidden sm:inline">{t('registry.openFullHeartbeat', 'Heartbeat')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate && onNavigate('map')}
+                  className="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-[11px] border border-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
+                  title={t('registry.locateOnMapTooltip', 'Locate on GIS Map')}
+                >
+                  <MapPin className="w-3 h-3 text-emerald-700" />
+                  <span>{t('registry.map', 'Map')}</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="p-8 text-center space-y-2">
+              <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-semibold text-slate-600">No Asset Selected</p>
+              <p className="text-[11px] text-slate-400">
+                Select an infrastructure asset from the table to preview its intelligence profile.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Asset Registration Modal (Admin / Demo Protected) */}
+      {/* 6. Asset Registration Modal (Admin / Demo Protected) */}
       {showRegisterModal && (isAdmin || isDemo) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 my-8 relative">
             {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-green-50 border border-green-200 text-green-700">
+                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700">
                   <PlusCircle className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    {isDemo ? t('registry.registerModalTitleDemo', 'Register Infrastructure Asset (Demo)') : t('registry.registerModalTitle', 'Register Infrastructure Asset')}
+                    {isDemo
+                      ? t('registry.registerModalTitleDemo', 'Register Infrastructure Asset (Demo)')
+                      : t('registry.registerModalTitle', 'Register Infrastructure Asset')}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    {t('registry.registerModalDesc', 'Add a verified public infrastructure entity to the AAYAM intelligence registry.')}
+                    {t(
+                      'registry.registerModalDesc',
+                      'Add a verified public infrastructure entity to the AAYAM intelligence registry.'
+                    )}
                   </p>
                 </div>
               </div>
@@ -728,7 +1050,7 @@ export default function AssetRegistry({
                   }
                 }}
                 disabled={submitting}
-                className="text-slate-400 hover:text-slate-700 p-1 rounded-md hover:bg-slate-100 transition-colors disabled:opacity-50"
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-md hover:bg-slate-100 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -738,9 +1060,9 @@ export default function AssetRegistry({
             {formSuccess && (
               <div
                 id="banner-registration-success"
-                className="p-3.5 rounded-xl bg-green-50 border border-green-200 text-green-800 text-xs flex items-center gap-2.5 animate-fadeIn"
+                className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2.5 animate-fadeIn"
               >
-                <CheckCircle2 className="w-4 h-4 text-green-700 shrink-0" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span className="font-medium">{formSuccess}</span>
               </div>
             )}
@@ -772,9 +1094,11 @@ export default function AssetRegistry({
                     value={formData.id}
                     onChange={(e) => handleInputChange('id', e.target.value)}
                     placeholder={t('registry.assetIdPlaceholder', 'e.g. ASSET-BRG-010')}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">{t('registry.assetIdHint', 'Unique official identifier (e.g. ASSET-BRG-010)')}</span>
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    {t('registry.assetIdHint', 'Unique official identifier (e.g. ASSET-BRG-010)')}
+                  </span>
                 </div>
                 <div>
                   <label className="text-slate-700 font-semibold block mb-1">
@@ -788,9 +1112,11 @@ export default function AssetRegistry({
                     value={formData.name}
                     onChange={(e) => handleInputChange('name', e.target.value)}
                     placeholder={t('registry.assetNamePlaceholder', 'e.g. Narmada Cable-Stayed Bridge')}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">{t('registry.assetNameHint', 'Full descriptive name of structural facility')}</span>
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    {t('registry.assetNameHint', 'Full descriptive name of structural facility')}
+                  </span>
                 </div>
               </div>
 
@@ -806,7 +1132,7 @@ export default function AssetRegistry({
                     disabled={submitting}
                     value={formData.category}
                     onChange={(e) => handleInputChange('category', e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors cursor-pointer disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer disabled:opacity-50"
                   >
                     {[
                       'Bridge',
@@ -835,11 +1161,17 @@ export default function AssetRegistry({
                     disabled={submitting}
                     value={formData.status}
                     onChange={(e) => handleInputChange('status', e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors cursor-pointer disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <option value="Operational" className="bg-white text-slate-900">{t('registry.statusOperationalNormal', 'Operational (Normal)')}</option>
-                    <option value="Requires Inspection" className="bg-white text-slate-900">{t('status.requiresInspection', 'Requires Inspection')}</option>
-                    <option value="Critical Attention" className="bg-white text-slate-900">{t('status.criticalAttention', 'Critical Attention')}</option>
+                    <option value="Operational" className="bg-white text-slate-900">
+                      {t('registry.statusOperationalNormal', 'Operational (Normal)')}
+                    </option>
+                    <option value="Requires Inspection" className="bg-white text-slate-900">
+                      {t('status.requiresInspection', 'Requires Inspection')}
+                    </option>
+                    <option value="Critical Attention" className="bg-white text-slate-900">
+                      {t('status.criticalAttention', 'Critical Attention')}
+                    </option>
                   </select>
                 </div>
               </div>
@@ -858,7 +1190,7 @@ export default function AssetRegistry({
                     value={formData.district}
                     onChange={(e) => handleInputChange('district', e.target.value)}
                     placeholder={t('registry.districtPlaceholder', 'e.g. Bharuch')}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
                 </div>
                 <div>
@@ -873,7 +1205,7 @@ export default function AssetRegistry({
                     value={formData.state}
                     onChange={(e) => handleInputChange('state', e.target.value)}
                     placeholder={t('registry.statePlaceholder', 'e.g. Gujarat')}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -893,9 +1225,11 @@ export default function AssetRegistry({
                     value={formData.latitude}
                     onChange={(e) => handleInputChange('latitude', e.target.value)}
                     placeholder={t('registry.latPlaceholder', 'e.g. 21.7051')}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">{t('registry.latHint', 'Decimal degrees (-90.0 to 90.0)')}</span>
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    {t('registry.latHint', 'Decimal degrees (-90.0 to 90.0)')}
+                  </span>
                 </div>
                 <div>
                   <label className="text-slate-700 font-semibold block mb-1">
@@ -910,9 +1244,11 @@ export default function AssetRegistry({
                     value={formData.longitude}
                     onChange={(e) => handleInputChange('longitude', e.target.value)}
                     placeholder={t('registry.lngPlaceholder', 'e.g. 72.9959')}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">{t('registry.lngHint', 'Decimal degrees (-180.0 to 180.0)')}</span>
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    {t('registry.lngHint', 'Decimal degrees (-180.0 to 180.0)')}
+                  </span>
                 </div>
               </div>
 
@@ -929,7 +1265,7 @@ export default function AssetRegistry({
                     value={formData.construction_year}
                     onChange={(e) => handleInputChange('construction_year', e.target.value)}
                     placeholder={t('registry.yearPlaceholder', 'e.g. 2017')}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
                 </div>
                 <div>
@@ -942,7 +1278,7 @@ export default function AssetRegistry({
                     disabled={submitting}
                     value={formData.last_inspection_date}
                     onChange={(e) => handleInputChange('last_inspection_date', e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -954,7 +1290,7 @@ export default function AssetRegistry({
                     <label className="text-slate-700 font-semibold">
                       {t('registry.initialRiskScore', 'Initial Risk Score (0 - 100)')}
                     </label>
-                    <span className="font-mono text-green-700 font-bold">
+                    <span className="font-mono text-emerald-700 font-bold">
                       {formData.risk_score} ({formData.risk_level})
                     </span>
                   </div>
@@ -967,7 +1303,7 @@ export default function AssetRegistry({
                     disabled={submitting}
                     value={formData.risk_score}
                     onChange={(e) => handleInputChange('risk_score', e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
                 </div>
                 <div>
@@ -975,7 +1311,7 @@ export default function AssetRegistry({
                     <label className="text-slate-700 font-semibold">
                       {t('registry.structuralHealthIndex', 'Structural Health Index (0 - 100%)')}
                     </label>
-                    <span className="font-mono text-green-700 font-bold">
+                    <span className="font-mono text-emerald-700 font-bold">
                       {formData.health_index}%
                     </span>
                   </div>
@@ -988,7 +1324,7 @@ export default function AssetRegistry({
                     disabled={submitting}
                     value={formData.health_index}
                     onChange={(e) => handleInputChange('health_index', e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 font-mono focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -1004,8 +1340,11 @@ export default function AssetRegistry({
                   disabled={submitting}
                   value={formData.flagged_reasons}
                   onChange={(e) => handleInputChange('flagged_reasons', e.target.value)}
-                  placeholder={t('registry.flaggedReasonsPlaceholder', 'e.g. Sub-surface scour detected; Bearing pad wear; High vibration anomaly (separate multiple flags with semicolons or newlines)')}
-                  className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                  placeholder={t(
+                    'registry.flaggedReasonsPlaceholder',
+                    'e.g. Sub-surface scour detected; Bearing pad wear; High vibration anomaly (separate multiple flags with semicolons or newlines)'
+                  )}
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                 />
               </div>
 
@@ -1020,8 +1359,11 @@ export default function AssetRegistry({
                   disabled={submitting}
                   value={formData.description}
                   onChange={(e) => handleInputChange('description', e.target.value)}
-                  placeholder={t('registry.descriptionPlaceholder', 'e.g. Major arterial transit crossing with heavy container traffic. Sub-surface foundations exposed to seasonal monsoon scour.')}
-                  className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-500 transition-colors disabled:opacity-50"
+                  placeholder={t(
+                    'registry.descriptionPlaceholder',
+                    'e.g. Major arterial transit crossing with heavy container traffic. Sub-surface foundations exposed to seasonal monsoon scour.'
+                  )}
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors disabled:opacity-50"
                 />
               </div>
 
@@ -1036,7 +1378,7 @@ export default function AssetRegistry({
                     setFormError(null);
                     setFormSuccess(null);
                   }}
-                  className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors disabled:opacity-50"
+                  className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   {t('common.cancel', 'Cancel')}
                 </button>
@@ -1044,7 +1386,7 @@ export default function AssetRegistry({
                   id="btn-submit-registration"
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2 rounded-lg bg-green-700 hover:bg-green-800 text-white font-semibold text-xs flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+                  className="px-5 py-2 rounded-lg bg-[#087F4F] hover:bg-[#06653E] text-white font-semibold text-xs flex items-center gap-2 transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
                 >
                   {submitting ? (
                     <>
@@ -1064,16 +1406,18 @@ export default function AssetRegistry({
         </div>
       )}
 
-      {/* Inspection History & Verification Modal */}
-      {selectedAsset && (
+      {/* 7. Inspection History & Verification Modal */}
+      {(selectedAsset || activeAsset) && (
         <InspectionHistoryModal
           isOpen={showInspectionModal}
           onClose={() => setShowInspectionModal(false)}
-          asset={selectedAsset}
+          asset={selectedAsset || activeAsset}
           isAdmin={isAdmin}
           isDemo={isDemo}
           onAssetUpdated={(updatedAsset) => {
-            onSelectAsset(updatedAsset);
+            if (typeof onSelectAsset === 'function') {
+              onSelectAsset(updatedAsset);
+            }
           }}
           onRefreshGlobal={() => {
             if (onRefresh) onRefresh();
