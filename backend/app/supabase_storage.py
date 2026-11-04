@@ -196,3 +196,4 @@ class SupabaseStorageService:
 
 # Global singleton storage service
 storage_service = SupabaseStorageService()
+
