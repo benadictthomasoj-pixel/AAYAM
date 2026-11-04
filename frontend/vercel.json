@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://aayam-backend.onrender.com/api/:match*"
+      "destination": "https://aayam-b5d8.onrender.com/api/:match*"
     },
     {
       "source": "/(.*)",
