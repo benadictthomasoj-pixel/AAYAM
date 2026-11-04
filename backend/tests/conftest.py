@@ -51,10 +51,17 @@ def test_db_path() -> Generator[str, None, None]:
 @pytest.fixture(scope="session")
 def test_engine(test_db_path: str):
     """Creates an isolated SQLAlchemy engine for the temporary test database."""
-    engine = create_engine(
-        f"sqlite:///{test_db_path}",
-        connect_args={"check_same_thread": False},
-    )
+    test_pg_url = os.environ.get("TEST_DATABASE_URL")
+    if test_pg_url:
+        connect_args = {}
+        if ":6543" in test_pg_url or "pooler.supabase" in test_pg_url:
+            connect_args["prepare_threshold"] = None
+        engine = create_engine(test_pg_url, pool_pre_ping=True, connect_args=connect_args)
+    else:
+        engine = create_engine(
+            f"sqlite:///{test_db_path}",
+            connect_args={"check_same_thread": False},
+        )
     Base.metadata.create_all(bind=engine)
     return engine
 

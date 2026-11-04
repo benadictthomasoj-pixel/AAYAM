@@ -520,9 +520,10 @@ def test_sqlite_foreign_key_enforcement(isolated_db: Session):
     1. Queries PRAGMA foreign_keys directly.
     2. Proves that inserting an Inspection referencing a non-existent asset raises IntegrityError.
     """
-    # Verify PRAGMA foreign_keys is 1
-    fk_status = isolated_db.execute(text("PRAGMA foreign_keys")).scalar()
-    assert fk_status == 1, f"Expected PRAGMA foreign_keys=1, got {fk_status}"
+    # Verify foreign keys are enabled (dialect-aware check)
+    if isolated_db.bind.dialect.name == "sqlite":
+        fk_status = isolated_db.execute(text("PRAGMA foreign_keys")).scalar()
+        assert fk_status == 1, f"Expected PRAGMA foreign_keys=1, got {fk_status}"
 
     # Verify constraint violation on inserting orphan child
     orphan_inspection = Inspection(
