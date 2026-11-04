@@ -16,6 +16,8 @@ services:
         value: 3.11.9
       - key: ENV
         value: production
+      - key: ENVIRONMENT
+        value: production
       - key: APP_NAME
         value: AAYAM Infrastructure Intelligence API
       # Supabase PostgreSQL Free Tier Connection String
