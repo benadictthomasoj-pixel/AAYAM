@@ -3,7 +3,8 @@
  * Communicates with FastAPI backend with structured error handling and JWT RBAC authentication.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const RAW_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const BASE_URL = RAW_BASE_URL.replace(/\/+$/, '');
 
 let currentAuthToken = null;
 let onUnauthorizedCallback = null;

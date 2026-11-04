@@ -64,6 +64,11 @@ def migrate_database(sqlite_db_path: str, pg_url: str) -> bool:
     if pg_url.startswith("postgres://"):
         pg_url = pg_url.replace("postgres://", "postgresql://", 1)
 
+    # Auto-append sslmode=require for Supabase if omitted
+    if ("supabase.co" in pg_url or "supabase.com" in pg_url) and "sslmode=" not in pg_url:
+        sep = "&" if "?" in pg_url else "?"
+        pg_url = f"{pg_url}{sep}sslmode=require"
+
     logger.info("=" * 70)
     logger.info("AAYAM DATABASE MIGRATION: SQLite -> PostgreSQL")
     logger.info("=" * 70)
@@ -83,7 +88,10 @@ def migrate_database(sqlite_db_path: str, pg_url: str) -> bool:
 
     # 2. Connect to Destination (PostgreSQL)
     try:
-        pg_engine = create_engine(pg_url, pool_pre_ping=True)
+        pg_connect_args = {}
+        if ":6543" in pg_url or "pooler.supabase" in pg_url:
+            pg_connect_args["prepare_threshold"] = None
+        pg_engine = create_engine(pg_url, pool_pre_ping=True, connect_args=pg_connect_args)
         # Test connection
         with pg_engine.connect() as conn:
             conn.execute(text("SELECT 1"))

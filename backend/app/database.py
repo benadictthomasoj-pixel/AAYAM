@@ -10,6 +10,10 @@ is_sqlite = DATABASE_URL.startswith("sqlite")
 # For SQLite, check_same_thread=False is needed for multi-threaded FastAPI handlers
 connect_args = {"check_same_thread": False} if is_sqlite else {}
 
+# For Supabase / PgBouncer transaction mode pooler (port 6543), disable server-side prepared statements
+if not is_sqlite and (":6543" in DATABASE_URL or "pooler.supabase" in DATABASE_URL):
+    connect_args.setdefault("prepare_threshold", None)
+
 
 @event.listens_for(Engine, "connect")
 def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
@@ -26,9 +30,10 @@ def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
 engine_kwargs = {"connect_args": connect_args, "echo": False}
 if not is_sqlite:
     # Production PostgreSQL connection pool configuration
+    # Set conservative defaults matching Supabase Free connection limits
     engine_kwargs.update({
-        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
-        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+        "pool_size": int(os.getenv("DB_POOL_SIZE", "5")),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "5")),
         "pool_pre_ping": True,
         "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
     })

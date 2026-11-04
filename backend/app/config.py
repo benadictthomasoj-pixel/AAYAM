@@ -38,10 +38,21 @@ elif _raw_db.startswith("postgres://"):
 else:
     DATABASE_URL = _raw_db
 
-# Storage Directories (Configurable for Render Persistent Disks)
+# Auto-append sslmode=require for Supabase PostgreSQL connections if omitted
+if ("supabase.co" in DATABASE_URL or "supabase.com" in DATABASE_URL) and "sslmode=" not in DATABASE_URL:
+    sep = "&" if "?" in DATABASE_URL else "?"
+    DATABASE_URL = f"{DATABASE_URL}{sep}sslmode=require"
+
+# Storage Directories (Local Cache & Ephemeral Fallback)
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", DATA_DIR / "media"))
 EVIDENCE_DIR = Path(os.getenv("EVIDENCE_DIR", DATA_DIR / "evidence"))
+
+# Supabase Storage Configuration (Free Tier Remote Object Storage)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY") or "").strip()
+SUPABASE_STORAGE_BUCKET_MEDIA = os.getenv("SUPABASE_STORAGE_BUCKET_MEDIA", "aayam-media")
+SUPABASE_STORAGE_BUCKET_EVIDENCE = os.getenv("SUPABASE_STORAGE_BUCKET_EVIDENCE", "aayam-evidence")
 
 # ==============================================================================
 # JWT AUTHENTICATION CONFIGURATION & SECURITY VALIDATION

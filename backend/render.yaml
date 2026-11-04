@@ -1,12 +1,12 @@
 services:
   # ============================================================================
-  # AAYAM Backend API — Render Web Service
+  # AAYAM Backend API — Render Web Service (Free Tier)
   # ============================================================================
   - type: web
     name: aayam-backend
     runtime: python
     region: oregon
-    plan: starter
+    plan: free
     rootDir: backend
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
@@ -18,21 +18,25 @@ services:
         value: production
       - key: APP_NAME
         value: AAYAM Infrastructure Intelligence API
+      # Supabase PostgreSQL Free Tier Connection String
+      # Example: postgresql://postgres.[REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
       - key: DATABASE_URL
-        fromDatabase:
-          name: aayam-db
-          property: connectionString
+        sync: false
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "5"
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: JWT_ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: 480
+        value: "480"
       - key: CORS_ORIGINS
         value: "http://localhost:5173,https://aayam.vercel.app"
       - key: CORS_ORIGIN_REGEX
         value: "^https://.*\\.vercel\\.app$"
-      # OpenRouter Cloud AI Intelligence (Set your API key in Render Dashboard)
+      # OpenRouter Cloud AI Intelligence (sk-or-v1-...)
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_BASE_URL
@@ -43,18 +47,12 @@ services:
         value: "https://aayam.vercel.app"
       - key: OPENROUTER_APP_NAME
         value: "AAYAM Infrastructure Intelligence"
-    disk:
-      name: aayam-data
-      mountPath: /var/data
-      sizeGB: 1
-
-# ==============================================================================
-# AAYAM Managed PostgreSQL Database
-# ==============================================================================
-databases:
-  - name: aayam-db
-    databaseName: aayam_infra
-    user: aayam
-    region: oregon
-    plan: starter
-
+      # Supabase Storage Free Tier (Remote Media & Evidence Object Storage)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET_MEDIA
+        value: "aayam-media"
+      - key: SUPABASE_STORAGE_BUCKET_EVIDENCE
+        value: "aayam-evidence"

@@ -67,6 +67,7 @@ from app.copilot_service import query_copilot_evidence, query_copilot_evidence_a
 from app.heartbeat_engine import calculate_digital_heartbeat, determine_asset_status
 from app.database import ensure_schema_compatibility, engine
 from app.seed import init_db
+from app.supabase_storage import storage_service
 
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1022,17 +1023,18 @@ def global_search(q: str = Query(..., min_length=1, description="Search term"), 
 # VISUAL MEDIA & EVIDENCE FILE SERVING
 # ==============================================================================
 
-@app.get(
+@app.api_route(
     "/api/media/{file_name}",
+    methods=["GET", "HEAD"],
     tags=["Media"],
     summary="Safely serve visual infrastructure media files",
 )
-def get_media_file(file_name: str):
+async def get_media_file(file_name: str):
     if not file_name or ".." in file_name or "/" in file_name or "\\" in file_name:
         raise HTTPException(status_code=400, detail="Invalid media file name.")
 
-    target = (MEDIA_DIR / file_name).resolve()
-    if not str(target).startswith(str(MEDIA_DIR.resolve())) or not target.exists() or not target.is_file():
+    target = await storage_service.get_or_fetch_media(file_name)
+    if not target or not target.exists() or not target.is_file():
         raise HTTPException(status_code=404, detail="Media file not found.")
 
     ext = target.suffix.lower()
@@ -1115,8 +1117,7 @@ async def upload_asset_media(
 
     safe_id = f"MED-{uuid.uuid4().hex[:8].upper()}"
     safe_filename = f"{asset_id.lower()}_{safe_id.lower()}{original_ext}"
-    target_path = MEDIA_DIR / safe_filename
-    target_path.write_bytes(content)
+    await storage_service.save_media_file(safe_filename, content, content_type=file.content_type)
 
     media_record = AssetMedia(
         id=safe_id,
