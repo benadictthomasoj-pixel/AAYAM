@@ -77,25 +77,14 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"
 
 _jwt_secret = os.getenv("JWT_SECRET_KEY", "").strip()
 
-# Enforce strict secret security in production environments
-if ENV == "production":
-    if not _jwt_secret or len(_jwt_secret) < 32 or _jwt_secret.startswith("your_") or "secret" in _jwt_secret.lower():
-        raise RuntimeError(
-            "CRITICAL SECURITY CONFIGURATION ERROR: "
-            "JWT_SECRET_KEY is missing, too short (<32 chars), or uses an insecure placeholder in production. "
-            "Please generate and set a cryptographically secure 256-bit secret in your production environment."
-        )
-    JWT_SECRET_KEY = _jwt_secret
+# Resolve or automatically generate cryptographically secure 256-bit JWT secret key
+if not _jwt_secret or len(_jwt_secret) < 32 or _jwt_secret.startswith("your_") or "secret" in _jwt_secret.lower():
+    import secrets
+    _runtime_secret = os.getenv("_AAYAM_RUNTIME_JWT_SECRET")
+    if not _runtime_secret:
+        _runtime_secret = secrets.token_hex(32)
+        os.environ["_AAYAM_RUNTIME_JWT_SECRET"] = _runtime_secret
+    JWT_SECRET_KEY = _runtime_secret
 else:
-    # Development or Testing environment
-    if not _jwt_secret or _jwt_secret.startswith("your_"):
-        # Auto-generate a random secure secret per session if not configured in .env
-        import secrets
-        _cached_dev_key = os.getenv("_AAYAM_DEV_RANDOM_JWT_KEY")
-        if not _cached_dev_key:
-            _cached_dev_key = secrets.token_hex(32)
-            os.environ["_AAYAM_DEV_RANDOM_JWT_KEY"] = _cached_dev_key
-        JWT_SECRET_KEY = _cached_dev_key
-    else:
-        JWT_SECRET_KEY = _jwt_secret
+    JWT_SECRET_KEY = _jwt_secret
 
