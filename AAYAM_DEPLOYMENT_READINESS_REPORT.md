@@ -6,7 +6,7 @@
 - **Frontend:** Vercel Free (React 19 + Vite 8 SPA)  
 - **Backend:** Render Free (FastAPI + Python 3.11.9)  
 - **Database:** Supabase PostgreSQL Free (PgBouncer Transaction Pooler)  
-- **Object Storage:** Supabase Storage Free (Public buckets for media & evidence)  
+- **Object Storage:** Supabase Storage Free (`aayam-media` public, `aayam-evidence` strictly private)  
 - **AI Engine:** OpenRouter API (`openai/gpt-4o`, backend-isolated)  
 
 ---
@@ -148,27 +148,22 @@ In **Render Dashboard > Web Service > Environment Variables**:
 
 ---
 
-### Step 2: Set Up Supabase Free (PostgreSQL & Storage)
-1. Sign in to [Supabase](https://supabase.com) (Free Tier).
-2. Create a new project (e.g., `aayam-production`).
-3. **Get Database Connection String:**
-   - Go to **Project Settings > Database > Connection Pooling**.
-   - Select **Mode: Transaction** (Port `6543`).
-   - Copy URI: `postgresql://postgres.[REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres`
-4. **Create Storage Buckets (Optional for remote media persistence):**
-   - Go to **Storage > New Bucket**.
-   - Create bucket `aayam-media` (Make Public).
-   - Create bucket `aayam-evidence` (Make Public).
-5. **Initial Data Migration:**
-   - From your local terminal or a secure runner, run:
+### Step 2: Supabase Free (PostgreSQL & Storage) Status & Final Step
+1. **Supabase Project:** Connected (`dahgvnzokjpieadtvqrj`).
+2. **Supabase Storage:** ✅ **100% Configured & Synchronized**
+   - Bucket `aayam-media`: Public (86 media files uploaded & verified).
+   - Bucket `aayam-evidence`: **Strictly Private** (5 engineering evidence PDFs uploaded; signed URLs verified).
+   - Cloud Evidence Sync: Implemented and verified on backend startup.
+3. **Database Migration (Pending DB Password):**
+   - In Supabase Dashboard, go to **Project Settings > Database > Connection Pooling**.
+   - Copy the Transaction connection URI (Port `6543`):
+     `postgresql://postgres.dahgvnzokjpieadtvqrj:[YOUR-DB-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?sslmode=require`
+   - Run the zero-data-loss migration script:
      ```bash
      cd backend
-     DATABASE_URL="<YOUR_SUPABASE_POSTGRES_URL>" ./venv/bin/python scripts/migrate_sqlite_to_postgres.py
+     DATABASE_URL="postgresql://postgres.dahgvnzokjpieadtvqrj:[YOUR-DB-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?sslmode=require" ./venv/bin/python scripts/migrate_sqlite_to_postgres.py
      ```
-   - (Optional) Sync static media files to Supabase:
-     ```bash
-     SUPABASE_URL="<YOUR_SUPABASE_URL>" SUPABASE_KEY="<YOUR_SUPABASE_KEY>" ./venv/bin/python scripts/sync_storage_to_supabase.py
-     ```
+   - All 77 records across all 8 tables will be transferred and validated automatically. Local `aayam_infra.db` and its snapshot `aayam_infra.db.backup` remain untouched.
 
 ---
 
