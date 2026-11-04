@@ -3,8 +3,36 @@
  * Communicates with FastAPI backend with structured error handling and JWT RBAC authentication.
  */
 
-const RAW_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
-const BASE_URL = RAW_BASE_URL.replace(/\/+$/, '');
+/**
+ * Resolves the API base URL for single-domain and multi-environment architecture:
+ * - Production builds (Vercel): Uses relative paths ('') so requests to /api/* 
+ *   route directly through Vercel's reverse proxy rewrites to Render (single-domain architecture).
+ * - Development: If VITE_API_BASE_URL is explicitly set, uses it (sanitizing trailing slashes).
+ *   Otherwise, relative '' allows Vite dev server to proxy /api to http://127.0.0.1:8000.
+ * - Test / Node environments: Falls back to http://127.0.0.1:8000 to prevent ERR_INVALID_URL in Node fetch.
+ */
+function resolveApiBaseUrl() {
+  const envUrl = (import.meta.env?.VITE_API_BASE_URL || '').trim();
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
+  }
+  // In test runner (Vitest / Node.js)
+  if (import.meta.env?.MODE === 'test') {
+    return 'http://127.0.0.1:8000';
+  }
+  // In production builds (Vercel deployment), use relative '' for single-domain proxy
+  if (import.meta.env?.PROD) {
+    return '';
+  }
+  // In non-browser Node environments where window/origin is missing
+  if (typeof window === 'undefined' || !window.location?.origin || window.location.origin === 'null') {
+    return 'http://127.0.0.1:8000';
+  }
+  // In local browser development, relative '' lets Vite dev server proxy /api to local FastAPI
+  return '';
+}
+
+export const BASE_URL = resolveApiBaseUrl();
 
 let currentAuthToken = null;
 let onUnauthorizedCallback = null;

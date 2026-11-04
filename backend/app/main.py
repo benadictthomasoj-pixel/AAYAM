@@ -571,6 +571,62 @@ def get_evidence_document(document_identifier: str):
     return DocumentDetailResponse(**doc_info)
 
 
+@app.get(
+    "/api/copilot/documents/{document_identifier:path}/signed-url",
+    tags=["Copilot", "Evidence"],
+    summary="Get short-lived signed URL for private engineering evidence document",
+)
+async def get_evidence_document_signed_url(
+    document_identifier: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generates a secure, short-lived (5-minute) signed URL to download or view a private
+    engineering evidence document from Supabase Storage.
+    Requires an active authenticated session (Bearer token).
+    Rejects unauthorized access and directory traversal attempts.
+    """
+    if not document_identifier or not document_identifier.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document identifier must be specified.",
+        )
+    if ".." in document_identifier or "\\" in document_identifier:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid document identifier.")
+
+    clean_id = document_identifier.strip()
+    doc_info = evidence_store.get_document_content(clean_id)
+    if not doc_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Source document '{clean_id}' was not found in the verified evidence archive.",
+        )
+
+    file_name = doc_info.get("filename") or clean_id
+    if storage_service.is_configured():
+        signed_url = await storage_service.create_signed_url(
+            bucket=storage_service.evidence_bucket,
+            file_name=file_name,
+            expires_in=300,
+        )
+        if signed_url:
+            return {
+                "document_name": doc_info.get("document_name"),
+                "filename": file_name,
+                "signed_url": signed_url,
+                "expires_in_seconds": 300,
+                "access_mode": "supabase_signed_url",
+            }
+
+    return {
+        "document_name": doc_info.get("document_name"),
+        "filename": file_name,
+        "signed_url": None,
+        "expires_in_seconds": 0,
+        "access_mode": "local_evidence_store",
+    }
+
+
 # ==============================================================================
 # DIGITAL HEARTBEAT & EXPLAINABLE RISK ENDPOINTS
 # ==============================================================================

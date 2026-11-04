@@ -77,8 +77,9 @@ async def main():
         sys.exit(1)
 
     logger.info(f"Supabase Endpoint: {SUPABASE_URL}")
-    logger.info(f"Media Bucket     : {SUPABASE_STORAGE_BUCKET_MEDIA}")
-    logger.info(f"Evidence Bucket  : {SUPABASE_STORAGE_BUCKET_EVIDENCE}")
+    logger.info(f"Media Bucket (Public)   : {SUPABASE_STORAGE_BUCKET_MEDIA}")
+    logger.info(f"Evidence Bucket (Private): {SUPABASE_STORAGE_BUCKET_EVIDENCE}")
+    logger.info("Note: 'aayam-media' is public for photography/thumbnails; 'aayam-evidence' is private for sensitive structural calculations.")
 
     # 1. Sync media files
     m_up, m_fail = await sync_directory(MEDIA_DIR, SUPABASE_STORAGE_BUCKET_MEDIA, "Media Files")

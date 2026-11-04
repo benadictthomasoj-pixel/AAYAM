@@ -76,8 +76,7 @@ import {
 } from '../demo/demoService';
 import { getAssetHeroImage, getAssetThumbnail } from '../utils/assetImages';
 
-const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-const API_BASE = RAW_API_BASE.replace(/\/+$/, '');
+import { BASE_URL } from '../services/api';
 import {
   enrichFinding,
   buildComponentInventory,
@@ -1228,7 +1227,7 @@ export default function AssetIntelligenceProfile({
                         >
                           <div className="h-28 overflow-hidden">
                             <img
-                              src={`${API_BASE}/api/media/${m.file_name}`}
+                              src={`${BASE_URL}/api/media/${m.file_name}`}
                               alt={m.caption}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                               onError={(e) => {
@@ -1545,7 +1544,7 @@ export default function AssetIntelligenceProfile({
               </div>
               <div className="max-h-[70vh] overflow-hidden rounded-xl bg-slate-100 flex items-center justify-center">
                 <img
-                  src={`${API_BASE}/api/media/${selectedImage.file_name}`}
+                  src={`${BASE_URL}/api/media/${selectedImage.file_name}`}
                   alt={selectedImage.caption}
                   className="max-h-[70vh] w-auto object-contain"
                 />

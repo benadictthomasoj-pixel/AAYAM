@@ -49,10 +49,49 @@ class SupabaseStorageService:
         return headers
 
     def get_public_url(self, bucket: str, file_name: str) -> str:
-        """Returns the public CDN URL for a file in a Supabase public bucket."""
+        """Returns the public CDN URL for a file in a Supabase public bucket.
+        Enforces that sensitive engineering evidence buckets cannot be retrieved via public URLs.
+        """
+        if bucket == self.evidence_bucket:
+            raise ValueError("Engineering evidence is stored in a private bucket and cannot have a public URL.")
         if not self.is_configured():
             return f"/api/media/{file_name}"
         return f"{self.url}/storage/v1/object/public/{bucket}/{file_name}"
+
+    async def create_signed_url(
+        self,
+        bucket: str,
+        file_name: str,
+        expires_in: int = 300,
+    ) -> Optional[str]:
+        """
+        Generates a short-lived signed URL for private bucket objects (e.g. sensitive engineering evidence).
+        Default expiry: 300 seconds (5 minutes). Requires authenticated session.
+        """
+        if not self.is_configured():
+            return None
+
+        endpoint = f"{self.url}/storage/v1/object/sign/{bucket}/{file_name}"
+        headers = self._headers("application/json")
+        body = {"expiresIn": expires_in}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(endpoint, json=body, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    signed_path = data.get("signedURL")
+                    if signed_path:
+                        if signed_path.startswith("http"):
+                            return signed_path
+                        return f"{self.url}{signed_path}" if signed_path.startswith("/") else f"{self.url}/{signed_path}"
+                logger.warning(
+                    f"Failed to generate signed URL for {file_name} in {bucket}: {res.status_code} {res.text}"
+                )
+                return None
+        except Exception as e:
+            logger.error(f"Error creating signed URL for {file_name}: {e}")
+            return None
 
     async def upload_bytes(
         self,
