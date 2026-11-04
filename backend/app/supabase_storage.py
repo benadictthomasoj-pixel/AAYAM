@@ -84,7 +84,9 @@ class SupabaseStorageService:
                     if signed_path:
                         if signed_path.startswith("http"):
                             return signed_path
-                        return f"{self.url}{signed_path}" if signed_path.startswith("/") else f"{self.url}/{signed_path}"
+                        if not signed_path.startswith("/storage/v1"):
+                            return f"{self.url}/storage/v1{signed_path if signed_path.startswith('/') else '/' + signed_path}"
+                        return f"{self.url}{signed_path}"
                 logger.warning(
                     f"Failed to generate signed URL for {file_name} in {bucket}: HTTP {res.status_code}"
                 )
@@ -231,6 +233,38 @@ class SupabaseStorageService:
                 return local_path
 
         return None
+
+    async def sync_evidence_from_cloud(self) -> int:
+        """
+        Lists all evidence files in Supabase Storage private bucket and re-hydrates
+        any missing documents into local EVIDENCE_DIR so DocumentStore can index them.
+        """
+        if not self.is_configured():
+            return 0
+        try:
+            endpoint = f"{self.url}/storage/v1/object/list/{self.evidence_bucket}"
+            headers = self._headers("application/json")
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(endpoint, json={"prefix": ""}, headers=headers)
+                if res.status_code == 200:
+                    objects = res.json()
+                    synced = 0
+                    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+                    for obj in objects:
+                        name = obj.get("name")
+                        if not name or name.startswith("."):
+                            continue
+                        target = EVIDENCE_DIR / name
+                        if not target.exists():
+                            data = await self.download_bytes(self.evidence_bucket, name)
+                            if data:
+                                target.write_bytes(data)
+                                synced += 1
+                                logger.info(f"Re-hydrated evidence document '{name}' from Supabase Storage.")
+                    return synced
+        except Exception as e:
+            logger.error(f"Error syncing evidence from Supabase Storage: {e}")
+        return 0
 
 
 # Global singleton storage service

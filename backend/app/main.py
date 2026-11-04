@@ -95,6 +95,10 @@ async def lifespan(app: FastAPI):
             f"Supabase Storage operational. Media bucket (public): '{storage_service.media_bucket}', "
             f"Evidence bucket (private): '{storage_service.evidence_bucket}'."
         )
+        synced_count = await storage_service.sync_evidence_from_cloud()
+        if synced_count > 0:
+            evidence_store._load_documents()
+            logger.info(f"Re-indexed {len(evidence_store.chunks)} evidence chunks following cloud synchronization.")
     else:
         warning_msg = (
             "SUPABASE CLOUD STORAGE NOT CONFIGURED: SUPABASE_URL or SUPABASE_KEY is missing. "
@@ -595,9 +599,14 @@ def get_evidence_document(document_identifier: str):
 
 
 @app.get(
-    "/api/copilot/documents/{document_identifier:path}/signed-url",
+    "/api/copilot/documents-signed-url/{document_identifier:path}",
     tags=["Copilot", "Evidence"],
     summary="Get short-lived signed URL for private engineering evidence document",
+)
+@app.get(
+    "/api/evidence/{document_identifier}/signed-url",
+    tags=["Copilot", "Evidence"],
+    summary="Get short-lived signed URL for private engineering evidence document by filename",
 )
 async def get_evidence_document_signed_url(
     document_identifier: str,
