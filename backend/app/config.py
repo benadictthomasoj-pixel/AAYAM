@@ -33,14 +33,25 @@ _cors_regex_raw = os.getenv("CORS_ORIGIN_REGEX", "").strip()
 CORS_ORIGIN_REGEX = _cors_regex_raw if _cors_regex_raw else None
 
 # Database URL configuration (Supports SQLite & PostgreSQL)
-_raw_db = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/aayam_infra.db")
-if _raw_db.startswith("sqlite:///."):
-    DATABASE_URL = f"sqlite:///{BASE_DIR}/{_raw_db[12:]}" if _raw_db.startswith("sqlite:///./") else f"sqlite:///{BASE_DIR}/{_raw_db[11:]}"
-elif _raw_db.startswith("postgres://"):
-    # Render and Heroku default to postgres://; SQLAlchemy 2.0 requires postgresql://
-    DATABASE_URL = _raw_db.replace("postgres://", "postgresql://", 1)
+_supabase_pwd = os.getenv("SUPABASE_DB_PASSWORD", "").strip()
+_raw_db = os.getenv("DATABASE_URL", "").strip()
+
+if _supabase_pwd and _supabase_pwd not in ["[YOUR_ACTUAL_PASSWORD]", "YOUR_PASSWORD"]:
+    from urllib.parse import quote_plus
+    _escaped_pwd = quote_plus(_supabase_pwd)
+    DATABASE_URL = f"postgresql://postgres.dahgvnzokjpieadtvqrj:{_escaped_pwd}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
+elif _raw_db and not _raw_db.startswith("sqlite") and ("[YOUR_ACTUAL_PASSWORD]" in _raw_db or "YOUR_PASSWORD" in _raw_db):
+    # Fallback to local SQLite if placeholder password is detected in development
+    DATABASE_URL = f"sqlite:///{BASE_DIR}/aayam_infra.db"
+elif _raw_db:
+    if _raw_db.startswith("sqlite:///."):
+        DATABASE_URL = f"sqlite:///{BASE_DIR}/{_raw_db[12:]}" if _raw_db.startswith("sqlite:///./") else f"sqlite:///{BASE_DIR}/{_raw_db[11:]}"
+    elif _raw_db.startswith("postgres://"):
+        DATABASE_URL = _raw_db.replace("postgres://", "postgresql://", 1)
+    else:
+        DATABASE_URL = _raw_db
 else:
-    DATABASE_URL = _raw_db
+    DATABASE_URL = f"sqlite:///{BASE_DIR}/aayam_infra.db"
 
 # Auto-append sslmode=require for Supabase PostgreSQL connections if omitted
 if ("supabase.co" in DATABASE_URL or "supabase.com" in DATABASE_URL) and "sslmode=" not in DATABASE_URL:

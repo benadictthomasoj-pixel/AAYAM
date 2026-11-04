@@ -205,16 +205,28 @@ def main():
         default=os.getenv("TARGET_DATABASE_URL") or os.getenv("DATABASE_URL"),
         help="Target PostgreSQL connection URL (e.g. postgresql://user:pass@host:5432/dbname)",
     )
+    parser.add_argument(
+        "--password",
+        default=os.getenv("SUPABASE_DB_PASSWORD"),
+        help="Supabase database password (auto-constructs transaction pooler URL)",
+    )
 
     args = parser.parse_args()
 
-    if not args.pg_url or args.pg_url.startswith("sqlite"):
-        print("ERROR: Target PostgreSQL database URL is required.")
-        print("Provide via --pg-url or set the TARGET_DATABASE_URL environment variable.")
-        print("Example: python migrate_sqlite_to_postgres.py --pg-url postgresql://user:pass@host:5432/aayam_db")
+    target_url = args.pg_url
+    if (not target_url or target_url.startswith("sqlite")) and args.password:
+        clean_pwd = args.password.strip()
+        if clean_pwd and clean_pwd not in ["[YOUR_ACTUAL_PASSWORD]", "YOUR_PASSWORD"]:
+            from urllib.parse import quote_plus
+            target_url = f"postgresql://postgres.dahgvnzokjpieadtvqrj:{quote_plus(clean_pwd)}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
+
+    if not target_url or target_url.startswith("sqlite") or "[YOUR_ACTUAL_PASSWORD]" in target_url:
+        print("ERROR: Target PostgreSQL database URL or valid password is required.")
+        print("Provide via --pg-url, --password, or set DATABASE_URL / SUPABASE_DB_PASSWORD.")
+        print("Example: python migrate_sqlite_to_postgres.py --password MyPassword123!")
         sys.exit(1)
 
-    success = migrate_database(args.sqlite_path, args.pg_url)
+    success = migrate_database(args.sqlite_path, target_url)
     sys.exit(0 if success else 1)
 
 
