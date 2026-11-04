@@ -86,7 +86,7 @@ class SupabaseStorageService:
                             return signed_path
                         return f"{self.url}{signed_path}" if signed_path.startswith("/") else f"{self.url}/{signed_path}"
                 logger.warning(
-                    f"Failed to generate signed URL for {file_name} in {bucket}: {res.status_code} {res.text}"
+                    f"Failed to generate signed URL for {file_name} in {bucket}: HTTP {res.status_code}"
                 )
                 return None
         except Exception as e:
@@ -117,7 +117,7 @@ class SupabaseStorageService:
                     return True
                 else:
                     logger.warning(
-                        f"Supabase Storage upload returned {res.status_code} for {file_name}: {res.text}"
+                        f"Supabase Storage upload returned HTTP {res.status_code} for {file_name}."
                     )
                     return False
         except Exception as e:

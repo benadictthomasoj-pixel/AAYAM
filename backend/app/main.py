@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
@@ -86,6 +87,28 @@ async def lifespan(app: FastAPI):
     logger.info("AAYAM API starting up. Verifying database and seed data...")
     ensure_schema_compatibility(engine)
     init_db(force_reseed=False)
+
+    # Verify Supabase Cloud Storage configuration status
+    require_cloud_storage = os.getenv("REQUIRE_CLOUD_STORAGE", "false").lower() in ("true", "1", "yes")
+    if storage_service.is_configured():
+        logger.info(
+            f"Supabase Storage operational. Media bucket (public): '{storage_service.media_bucket}', "
+            f"Evidence bucket (private): '{storage_service.evidence_bucket}'."
+        )
+    else:
+        warning_msg = (
+            "SUPABASE CLOUD STORAGE NOT CONFIGURED: SUPABASE_URL or SUPABASE_KEY is missing. "
+            "Media and evidence files are using ephemeral local container storage. "
+            "On Render Free tier, uploaded files will NOT persist across instance restarts."
+        )
+        if ENV == "production":
+            logger.warning("=" * 80)
+            logger.warning(f"PRODUCTION WARNING: {warning_msg}")
+            logger.warning("=" * 80)
+            if require_cloud_storage:
+                raise RuntimeError(f"FATAL PRODUCTION STARTUP FAILURE: REQUIRE_CLOUD_STORAGE=true but {warning_msg}")
+        else:
+            logger.info("Local storage fallback active for development environment.")
     yield
     logger.info("AAYAM API shutting down.")
 

@@ -19,14 +19,18 @@ def load_app_env():
 load_app_env()
 
 APP_NAME = os.getenv("APP_NAME", "AAYAM Infrastructure Intelligence API")
-ENV = os.getenv("ENV", "development")
+ENV = (os.getenv("ENV") or os.getenv("ENVIRONMENT") or "development").strip().lower()
 PORT = int(os.getenv("PORT", "8000"))
 HOST = os.getenv("HOST", "0.0.0.0")
 
-# Comma-separated CORS origins
-_cors_raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+# Comma-separated CORS origins (Strictly restricted in production to https://aayam.vercel.app)
+_default_cors = "https://aayam.vercel.app" if ENV == "production" else "http://localhost:5173,http://127.0.0.1:5173"
+_cors_raw = os.getenv("CORS_ORIGINS", _default_cors)
 CORS_ORIGINS = [origin.strip() for origin in _cors_raw.split(",") if origin.strip()]
-CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX", r"^https://.*\.vercel\.app$")
+
+# Origin regex: disabled by default in production to prevent arbitrary Vercel preview domains
+_cors_regex_raw = os.getenv("CORS_ORIGIN_REGEX", "").strip()
+CORS_ORIGIN_REGEX = _cors_regex_raw if _cors_regex_raw else None
 
 # Database URL configuration (Supports SQLite & PostgreSQL)
 _raw_db = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/aayam_infra.db")

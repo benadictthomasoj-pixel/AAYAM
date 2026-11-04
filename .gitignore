@@ -178,6 +178,7 @@ wheels/
 *.sqlite
 *.sqlite3
 *.db
+*.backup
 
 # Node / Frontend
 node_modules/

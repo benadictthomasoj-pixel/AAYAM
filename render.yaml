@@ -33,9 +33,7 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "480"
       - key: CORS_ORIGINS
-        value: "http://localhost:5173,https://aayam.vercel.app"
-      - key: CORS_ORIGIN_REGEX
-        value: "^https://.*\\.vercel\\.app$"
+        value: "https://aayam.vercel.app"
       # OpenRouter Cloud AI Intelligence (sk-or-v1-...)
       - key: OPENROUTER_API_KEY
         sync: false
