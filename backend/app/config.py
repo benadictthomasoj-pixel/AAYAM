@@ -72,13 +72,40 @@ SUPABASE_STORAGE_BUCKET_EVIDENCE = os.getenv("SUPABASE_STORAGE_BUCKET_EVIDENCE",
 # ==============================================================================
 # JWT AUTHENTICATION CONFIGURATION & SECURITY VALIDATION
 # ==============================================================================
+import logging
+
+logger = logging.getLogger("aayam.config")
+
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # Default: 8 hours
 
 _jwt_secret = os.getenv("JWT_SECRET_KEY", "").strip()
 
+_known_insecure_placeholders = {
+    "your_secure_random_jwt_secret_key_here",
+    "generate_a_secure_random_64_character_hex_string_here",
+    "replace_this_with_a_secure_secret",
+    "your_jwt_secret_key_here",
+}
+
+_is_placeholder = (
+    _jwt_secret.lower().startswith("your_")
+    or _jwt_secret.lower().startswith("placeholder")
+    or _jwt_secret.lower().startswith("changeme")
+    or _jwt_secret.lower() in _known_insecure_placeholders
+)
+
 if ENV == "production":
-    if not _jwt_secret or len(_jwt_secret) < 32 or _jwt_secret.startswith("your_") or "secret" in _jwt_secret.lower():
+    _is_valid = bool(_jwt_secret) and len(_jwt_secret) >= 32 and not _is_placeholder
+    logger.info(
+        "Production JWT_SECRET_KEY configuration check: present=%s, length=%d, valid_length=%s, is_placeholder=%s, validation_passed=%s",
+        bool(_jwt_secret),
+        len(_jwt_secret),
+        len(_jwt_secret) >= 32,
+        _is_placeholder,
+        _is_valid,
+    )
+    if not _is_valid:
         raise RuntimeError(
             "CRITICAL SECURITY CONFIGURATION ERROR: "
             "JWT_SECRET_KEY is missing, too short (<32 chars), or uses an insecure placeholder in production. "
@@ -87,7 +114,7 @@ if ENV == "production":
     JWT_SECRET_KEY = _jwt_secret
 else:
     # Development or Testing environment
-    if not _jwt_secret or _jwt_secret.startswith("your_"):
+    if not _jwt_secret or _is_placeholder:
         import secrets
         _cached_dev_key = os.getenv("_AAYAM_DEV_RANDOM_JWT_KEY")
         if not _cached_dev_key:
